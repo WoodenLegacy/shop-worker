@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2b2420">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Shop Worker</title>
+<style>
+  /* Same look as Shop Hub (HubPage.html), so both portals feel like one system. */
+  :root{--bg:#f6f3ee;--panel:#fff;--ink:#2b2420;--muted:#7a6f66;--line:#e6dfd5;--wood:#8a5a35;--wood-soft:#f1e6da;
+    --green:#2f6b4f;--green-soft:#e3efe8;--amber:#b7791f;--amber-soft:#fbf0dc;--red:#b03a2e;--red-soft:#f8e3e0}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.45 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  .app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}
+  aside{background:#2b2420;color:#efe7dd;padding:22px 14px;display:flex;flex-direction:column;gap:4px}
+  .brand{font-weight:700;font-size:16px;padding:0 10px 18px}.brand small{display:block;font-weight:400;color:#b9ab9c;font-size:12px}
+  nav{display:flex;flex-direction:column;gap:4px}
+  nav button{all:unset;display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:8px;cursor:pointer;color:#e3d8cb;white-space:nowrap}
+  nav button:hover{background:#3a312b} nav button.on{background:var(--wood);color:#fff}
+  .ico{width:18px;text-align:center}
+  main{padding:22px 30px;min-width:0;max-width:900px}
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}
+  h1{font-size:22px;margin:0} h2{font-size:15px;margin:0 0 10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  .big{font-size:26px;font-weight:700}.note{font-size:13px;color:var(--muted)}
+  .btn{all:unset;cursor:pointer;padding:12px 18px;border-radius:9px;font-weight:600;font-size:15px;text-align:center}
+  .btn-p{background:var(--wood);color:#fff}.btn-s{background:var(--wood-soft);color:var(--wood)}
+  .btn-g{background:var(--green);color:#fff}.btn-r{background:var(--red-soft);color:var(--red)}
+  .btn[disabled]{opacity:.45;pointer-events:none}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+  .ops{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+  .ops .btn{padding:18px 12px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+  .ops .btn:hover{border-color:var(--wood)} .ops .btn.cnc{background:var(--wood-soft);color:var(--wood)}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0}
+  .chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+  .c-green{background:var(--green-soft);color:var(--green)}.c-amber{background:var(--amber-soft);color:var(--amber)}.c-wood{background:var(--wood-soft);color:var(--wood)}
+  .now{border-color:var(--green);background:var(--green-soft)}
+  .empty{color:var(--muted);padding:8px 0}
+  .steps{padding-left:20px;margin:0}.steps li{margin-bottom:8px}
+  .view{display:none}.view.on{display:block}
+  #toast{position:fixed;right:18px;bottom:18px;left:auto;background:#2b2420;color:#fff;padding:12px 16px;border-radius:8px;display:none;max-width:420px;z-index:9}
+  #toast.err{background:var(--red)}
+  #busy{position:fixed;inset:0;background:rgba(246,243,238,.6);display:none;place-items:center;z-index:8;font-weight:600}
+  @media (max-width:760px){
+    .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr} aside{padding:12px 10px 8px;position:sticky;top:0;z-index:5;min-width:0}
+    .brand{padding:0 6px 8px} nav{flex-direction:row;overflow-x:auto;gap:6px;padding-bottom:4px}
+    nav button{padding:9px 12px;background:#3a312b} main{padding:14px} #toast{left:12px;right:12px}
+  }
+</style>
+</head>
+<body>
+<div id="busy">Working…</div>
+<div id="toast"></div>
+<div class="app">
+  <aside>
+    <div class="brand">The Wooden Legacy<small id="who">Shop Worker</small></div>
+    <nav id="nav"></nav>
+  </aside>
+  <main id="main"><div class="empty">Loading…</div></main>
+</div>
+
+<script>
+// V91: this page lives on its own address and talks to the Shop Worker Apps Script as an API (no Google sign-in needed).
+var API = "https://script.google.com/macros/s/AKfycbwSfMKRKSkvT3t7yJ7Ho2ExvUUcsXemMnavziDjfeaSg84TMki2E3ulvnlvSV4-gmGVog/exec";
+var TOKEN = new URLSearchParams(location.search).get("t") || "", S = null, VIEW = "My day", TABS = [];
+try { if (TOKEN) localStorage.setItem("shopWorkerToken", TOKEN); else TOKEN = localStorage.getItem("shopWorkerToken") || ""; } catch (e) {}
+var ICONS = { "My day": "▦", "General": "⚑", "Blanks": "▤", "CNC": "◈", "Hand work": "✋", "Parts": "▣", "Kitchens": "⌂", "Jobs": "☰", "Stock check": "✓", "Help": "?" };
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function hm(m){ m = Math.max(0, Math.round(m || 0)); return (m >= 60 ? Math.floor(m / 60) + " h " : "") + (m % 60) + " min"; }
+function toast(t, err){ var x = $("toast"); x.textContent = t; x.className = err ? "err" : ""; x.style.display = "block"; clearTimeout(x._h); x._h = setTimeout(function(){ x.style.display = "none"; }, err ? 7000 : 3000); }
+var ACTIONS = { wkState: ["state"], wkClockIn: ["clockIn"], wkClockOut: ["clockOut"], wkStart: ["start", "a", "o"], wkPause: ["pause"],
+                wkContinue: ["continue", "id"], wkDone: ["done", "id"], wkMachineStop: ["machineStop", "id"] };
+function api(fn, args){
+  var a = ACTIONS[fn], q = "?api=" + a[0] + "&t=" + encodeURIComponent(TOKEN);
+  for (var i = 1; i < a.length; i++) q += "&" + a[i] + "=" + encodeURIComponent(args[i - 1] == null ? "" : args[i - 1]);
+  return fetch(API + q, { credentials: "omit", cache: "no-store" }).then(function(r){ return r.json(); })
+    .then(function(j){ if (!j.ok) throw new Error(j.error); return j.state; });
+}
+function call(fn){
+  var args = [].slice.call(arguments, 1);
+  $("busy").style.display = "grid";
+  return api(fn, args).then(function(s){ $("busy").style.display = "none"; S = s; render(); return s; }, function(e){
+    $("busy").style.display = "none";
+    if (/not valid/i.test(e.message)) { try { localStorage.removeItem("shopWorkerToken"); } catch (x) {} noLink(e.message); }
+    else toast(/fetch|network/i.test(e.message) ? "No connection - check the internet and try again." : e.message, true);
+    throw e;
+  });
+}
+function noLink(msg){ $("nav").innerHTML = ""; $("main").innerHTML = '<div class="card"><div class="big">Open your personal link</div><div class="note">' + esc(msg || "This page needs the link the office sent you.") + ' Ask the office for a new link if it does not work.</div></div>'; }
+function areas(){ var a = []; S.ops.forEach(function(o){ if (a.indexOf(o.area) < 0) a.push(o.area); }); return a; }
+function go(v){ VIEW = v; render(); window.scrollTo(0, 0); }
+
+function render(){
+  $("who").textContent = S.name + (S.shift ? " · on shift" : "");
+  var tabs = TABS = ["My day"].concat(areas(), ["Help"]);
+  if (tabs.indexOf(VIEW) < 0) VIEW = "My day";
+  $("nav").innerHTML = tabs.map(function(t, i){ return '<button class="' + (t === VIEW ? "on" : "") + '" onclick="go(TABS[' + i + '])"><span class="ico">' + (ICONS[t] || "•") + '</span>' + esc(t) + '</button>'; }).join("");
+  $("main").innerHTML = VIEW === "My day" ? myDay() : VIEW === "Help" ? help() : area(VIEW);
+}
+
+function runningCard(){
+  if (!S.running) return "";
+  var r = S.running;
+  return '<div class="card now"><div class="note">Working now · ' + esc(r.area) + '</div><div class="big">' + esc(r.op) + '</div>' +
+    '<div class="note">' + hm(r.minutes) + ' so far · started ' + esc(r.started) + '</div>' +
+    '<div class="actions"><button class="btn btn-s" onclick="call(\'wkPause\')">Pause</button><button class="btn btn-g" onclick="call(\'wkDone\',\'' + r.opId + '\')">Done</button></div></div>';
+}
+function machineCards(){
+  return S.machine.map(function(m){
+    return '<div class="card"><div class="note">CNC machine</div><div class="big">' + esc(m.op) + '</div>' +
+      '<div class="note">Running ' + hm(m.minutes) + ' · since ' + esc(m.since) + '</div>' +
+      '<div class="actions"><button class="btn btn-p" onclick="call(\'wkMachineStop\',\'' + m.opId + '\')">Cut finished</button></div></div>';
+  }).join("");
+}
+function myDay(){
+  var h = '<header><h1>My day</h1><div class="note">' + new Date().toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" }) + '</div></header>';
+  h += S.shift
+    ? '<div class="card"><div class="note">On shift since ' + esc(S.shift.since) + '</div><div class="big">' + hm(S.shift.minutes) + '</div><div class="actions"><button class="btn btn-r" onclick="clockOut()">Clock out</button></div></div>'
+    : '<div class="card"><div class="big">Not clocked in</div><div class="note">Press Clock in when you start work.</div><div class="actions"><button class="btn btn-g" onclick="call(\'wkClockIn\')">Clock in</button></div></div>';
+  h += runningCard() + machineCards();
+  if (S.paused.length) h += '<div class="card"><h2>Paused / drying</h2>' + S.paused.map(function(p){
+    return '<div class="row"><div><b>' + esc(p.op) + '</b> <span class="chip c-amber">' + esc(p.area) + '</span><div class="note">' + hm(p.minutes) + ' of work · paused ' + esc(p.since) + '</div></div>' +
+      '<div class="actions" style="margin:0"><button class="btn btn-s"' + (S.shift ? "" : " disabled") + ' onclick="call(\'wkContinue\',\'' + p.opId + '\')">Continue</button><button class="btn btn-g" onclick="call(\'wkDone\',\'' + p.opId + '\')">Done</button></div></div>'; }).join("") + '</div>';
+  if (S.shift && !S.running) h += '<div class="card"><h2>What are you doing now?</h2><div class="ops">' + areas().map(function(a){ return '<button class="btn" onclick="go(TABS[' + TABS.indexOf(a) + '])">' + (ICONS[a] || "•") + ' ' + esc(a) + '</button>'; }).join("") + '</div></div>';
+  h += '<div class="card"><h2>Today</h2>' + (S.today.length ? S.today.map(function(t){
+    return '<div class="row"><div>' + esc(t.op) + ' <span class="note">· ' + esc(t.area) + (t.kind === "machine" ? " · machine" : "") + '</span></div><div class="note">' + esc(t.from) + '–' + esc(t.to || "now") + ' · ' + hm(t.minutes) + '</div></div>'; }).join("") : '<div class="empty">Nothing yet today.</div>') + '</div>';
+  return h;
+}
+function area(a){
+  var list = S.ops.filter(function(o){ return o.area === a; });
+  var h = '<header><h1>' + esc(a) + '</h1></header>';
+  if (!S.shift) h += '<div class="card"><b>Clock in first</b><div class="note">Go to My day and press Clock in.</div><div class="actions"><button class="btn btn-g" onclick="call(\'wkClockIn\')">Clock in</button></div></div>';
+  if (S.running && S.running.area === a) h += runningCard();
+  if (list.some(function(o){ return o.kind === "machine"; })) h += machineCards();
+  h += '<div class="card"><h2>Start an operation</h2><div class="ops">' + list.map(function(o){
+    var busy = o.kind === "machine" && S.machine.length;
+    return '<button class="btn' + (o.kind === "machine" ? " cnc" : "") + '"' + (S.shift && !busy ? "" : " disabled") + ' onclick="start(' + S.ops.indexOf(o) + ')">' +
+      (o.kind === "machine" ? "▶ Start: " : "") + esc(o.op) + '</button>'; }).join("") + '</div>' +
+    '<div class="note" style="margin-top:10px">Starting a new operation finishes the one you are doing now. The CNC runs on its own - start the cut, then do hand work.</div></div>';
+  return h;
+}
+function start(i){ var o = S.ops[i]; call("wkStart", o.area, o.op).then(function(){ toast("Started: " + o.op); }); }
+function clockOut(){ call("wkClockOut").then(function(){ toast("Clocked out. Anything running is paused until tomorrow."); }); }
+function help(){
+  return '<header><h1>How to use this page</h1></header>' +
+    '<div class="card"><h2>Every day</h2><ol class="steps">' +
+    '<li><b>Start of the day:</b> My day → <b>Clock in</b>.</li>' +
+    '<li><b>Start a job:</b> open the tab (Blanks, CNC, Hand work…) → press the operation. A green card shows what you are doing now.</li>' +
+    '<li><b>Next job:</b> just press the next operation. The previous one is finished automatically.</li>' +
+    '<li><b>CNC:</b> press <b>Start: CNC cutting</b> when the machine starts. Do hand work meanwhile. Press <b>Cut finished</b> when it stops.</li>' +
+    '<li><b>Glue or finish drying:</b> press <b>Pause</b>. Later press <b>Continue</b> in Paused / drying, or <b>Done</b> if nothing is left to do.</li>' +
+    '<li><b>End of the day:</b> My day → <b>Clock out</b>. A job you were doing is paused and waits for you tomorrow.</li></ol></div>' +
+    '<div class="card"><h2>If you forgot</h2><ol class="steps">' +
+    '<li><b>Forgot to Clock out:</b> the shift closes by itself in the evening and the office corrects the time.</li>' +
+    '<li><b>Forgot to switch the job:</b> press the right operation as soon as you notice.</li>' +
+    '<li><b>The page says the link is not valid:</b> ask the office for a new link.</li></ol></div>' +
+    '<div class="card"><div class="note">You do not need FreshBooks: your hours go there automatically.</div></div>';
+}
+
+// The page is the worker's clock: minutes move every 30 s, fresh data every 2 minutes.
+function tick(){
+  if (!S) return;
+  if (S.shift) S.shift.minutes += 0.5;
+  if (S.running) S.running.minutes += 0.5;
+  S.machine.forEach(function(m){ m.minutes += 0.5; });
+  if (VIEW === "My day" || VIEW === "CNC") render();
+}
+var n = 0;
+setInterval(function(){ n++; if (n % 4 === 0) api("wkState", []).then(function(s){ S = s; render(); }, function(){}); else tick(); }, 30000);
+if (TOKEN) call("wkState").catch(function(){}); else noLink();
+</script>
+</body>
+</html>
