@@ -72,8 +72,11 @@ function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function hm(m){ m = Math.max(0, Math.round(m || 0)); return (m >= 60 ? Math.floor(m / 60) + " h " : "") + (m % 60) + " min"; }
 function toast(t, err){ var x = $("toast"); x.textContent = t; x.className = err ? "err" : ""; x.style.display = "block"; clearTimeout(x._h); x._h = setTimeout(function(){ x.style.display = "none"; }, err ? 7000 : 3000); }
-var ACTIONS = { wkState: ["state"], wkClockIn: ["clockIn"], wkClockOut: ["clockOut"], wkStart: ["start", "a", "o"], wkPause: ["pause"],
-                wkContinue: ["continue", "id"], wkDone: ["done", "id"], wkMachineStop: ["machineStop", "id"] };
+var ACTIONS = { wkState: ["state"], wkClockIn: ["clockIn"], wkClockOut: ["clockOut"], wkStart: ["start", "a", "o", "i"], wkPause: ["pause"],
+                wkContinue: ["continue", "id"], wkDone: ["done", "id"], wkMachineStop: ["machineStop", "id"],
+                wkMapStart: ["mapStart", "order", "tier", "design"], wkMapDone: ["mapDone", "id", "q", "note", "photo"],  // V92
+                wkBatchStart: ["batchStart", "out"], wkBatchTake: ["batchTake", "id", "item", "qty"],
+                wkBatchFinish: ["batchFinish", "id", "qty", "def", "leftItem", "leftQty"], wkCount: ["count", "c"] };
 function api(fn, args){
   var a = ACTIONS[fn], q = "?api=" + a[0] + "&t=" + encodeURIComponent(TOKEN);
   for (var i = 1; i < a.length; i++) q += "&" + a[i] + "=" + encodeURIComponent(args[i - 1] == null ? "" : args[i - 1]);
@@ -96,17 +99,17 @@ function go(v){ VIEW = v; render(); window.scrollTo(0, 0); }
 
 function render(){
   $("who").textContent = S.name + (S.shift ? " · on shift" : "");
-  var tabs = TABS = ["My day"].concat(areas(), ["Help"]);
+  var tabs = TABS = ["My day"].concat(areas(), S.cnc ? ["Stock check"] : [], ["Help"]);
   if (tabs.indexOf(VIEW) < 0) VIEW = "My day";
   $("nav").innerHTML = tabs.map(function(t, i){ return '<button class="' + (t === VIEW ? "on" : "") + '" onclick="go(TABS[' + i + '])"><span class="ico">' + (ICONS[t] || "•") + '</span>' + esc(t) + '</button>'; }).join("");
-  $("main").innerHTML = VIEW === "My day" ? myDay() : VIEW === "Help" ? help() : area(VIEW);
+  $("main").innerHTML = VIEW === "My day" ? myDay() : VIEW === "Help" ? help() : VIEW === "Stock check" ? stockCheck() : area(VIEW);
 }
 
 function runningCard(){
   if (!S.running) return "";
   var r = S.running;
   return '<div class="card now"><div class="note">Working now · ' + esc(r.area) + '</div><div class="big">' + esc(r.op) + '</div>' +
-    '<div class="note">' + hm(r.minutes) + ' so far · started ' + esc(r.started) + '</div>' +
+    '<div class="note">' + hm(r.minutes) + ' so far · started ' + esc(r.started) + (r.items ? ' · ' + esc(r.items.replace(/map:/g, "#").replace(/batch:/g, "").replace(/;/g, ", ")) : "") + '</div>' +
     '<div class="actions"><button class="btn btn-s" onclick="call(\'wkPause\')">Pause</button><button class="btn btn-g" onclick="call(\'wkDone\',\'' + r.opId + '\')">Done</button></div></div>';
 }
 function machineCards(){
@@ -130,20 +133,124 @@ function myDay(){
     return '<div class="row"><div>' + esc(t.op) + ' <span class="note">· ' + esc(t.area) + (t.kind === "machine" ? " · machine" : "") + '</span></div><div class="note">' + esc(t.from) + '–' + esc(t.to || "now") + ' · ' + hm(t.minutes) + '</div></div>'; }).join("") : '<div class="empty">Nothing yet today.</div>') + '</div>';
   return h;
 }
+// ---------- V92: CNC maps - maps and batches on the tabs
+var SELM = {}, SELB = "", FIN = "", PHOTO = null;
+function opLinks(list){ var s = {}; list.forEach(function(o){ s[o.links] = 1; }); return s; }
+function mapLabel(m){ return "#" + m.serial + " " + m.tier + (m.design ? " · " + m.design : ""); }
 function area(a){
-  var list = S.ops.filter(function(o){ return o.area === a; });
+  var list = S.ops.filter(function(o){ return o.area === a; }), L = opLinks(list), c = S.cnc;
   var h = '<header><h1>' + esc(a) + '</h1></header>';
   if (!S.shift) h += '<div class="card"><b>Clock in first</b><div class="note">Go to My day and press Clock in.</div><div class="actions"><button class="btn btn-g" onclick="call(\'wkClockIn\')">Clock in</button></div></div>';
   if (S.running && S.running.area === a) h += runningCard();
   if (list.some(function(o){ return o.kind === "machine"; })) h += machineCards();
+  if (c && (L.map || L.any)) h += mapsCard();
+  if (c && (L.batch || L.any)) h += batchesCard(a);
   h += '<div class="card"><h2>Start an operation</h2><div class="ops">' + list.map(function(o){
     var busy = o.kind === "machine" && S.machine.length;
     return '<button class="btn' + (o.kind === "machine" ? " cnc" : "") + '"' + (S.shift && !busy ? "" : " disabled") + ' onclick="start(' + S.ops.indexOf(o) + ')">' +
       (o.kind === "machine" ? "▶ Start: " : "") + esc(o.op) + '</button>'; }).join("") + '</div>' +
-    '<div class="note" style="margin-top:10px">Starting a new operation finishes the one you are doing now. The CNC runs on its own - start the cut, then do hand work.</div></div>';
+    '<div class="note" style="margin-top:10px">' + (L.map || L.batch || L.any ? "Tick the map(s) or choose the batch above, then press the operation. " : "") +
+    'Starting a new operation finishes the one you are doing now. The CNC runs on its own - start the cut, then do hand work.</div></div>';
   return h;
 }
-function start(i){ var o = S.ops[i]; call("wkStart", o.area, o.op).then(function(){ toast("Started: " + o.op); }); }
+function mapsCard(){
+  var c = S.cnc, h = '<div class="card"><h2>Maps in progress</h2>';
+  h += c.maps.length ? c.maps.map(function(m){
+    var fin = FIN === m.serial;
+    return '<div class="row"><label style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="checkbox" style="width:22px;height:22px"' + (SELM[m.serial] ? " checked" : "") +
+      ' onchange="SELM[\'' + m.serial + '\']=this.checked"> <span><b>' + esc(mapLabel(m)) + '</b><div class="note">' + esc(m.worker) + ' · started ' + esc(m.started) + '</div></span></label>' +
+      '<button class="btn btn-s" onclick="FIN=FIN===\'' + m.serial + '\'?\'\':\'' + m.serial + '\';PHOTO=null;render()">' + (fin ? "Close" : "Finish map") + '</button></div>' + (fin ? finishForm(m) : ""); }).join("")
+    : '<div class="empty">No maps in progress.</div>';
+  h += '<h2 style="margin-top:14px">Start a new map</h2>';
+  if (c.orders.length) h += '<div class="ops">' + c.orders.map(function(o, i){ return '<button class="btn"' + (S.shift ? "" : " disabled") + ' onclick="mapStart(' + i + ')">' + esc(o.tier) + (o.design ? " · " + esc(o.design) : "") + (o.due ? '<div class="note">due ' + esc(o.due) + '</div>' : "") + '</button>'; }).join("") + '</div><div class="note" style="margin:8px 0">Orders first. Or make one for stock:</div>';
+  h += '<div class="actions" style="margin-top:6px"><select id="nmTier" style="max-width:200px;padding:10px">' + c.tiers.map(function(t){ return '<option>' + esc(t.tier) + '</option>'; }).join("") + '</select>' +
+    '<input id="nmDesign" placeholder="Place / design (optional)" style="max-width:240px;padding:10px"><button class="btn btn-p"' + (S.shift ? "" : " disabled") + ' onclick="mapStart(-1)">Start map</button></div>';
+  return h + '</div>';
+}
+function finishForm(m){
+  return '<div style="background:var(--wood-soft);border-radius:10px;padding:12px;margin:6px 0 10px">' +
+    '<label class="note">1. Photo of the finished map</label><input type="file" accept="image/*" capture="environment" onchange="pickPhoto(this)" style="margin:6px 0 10px">' +
+    '<label class="note">2. Quality</label><div class="actions" style="margin:6px 0 10px"><label><input type="radio" name="fq" value="ok" checked> OK</label><label><input type="radio" name="fq" value="defect"> Defect</label></div>' +
+    '<label class="note">3. Note (what went wrong, if a defect)</label><input id="fNote" style="width:100%;padding:10px;margin:6px 0 10px">' +
+    '<button class="btn btn-g" onclick="mapDone(\'' + m.serial + '\')">Map #' + esc(m.serial) + ' is done</button></div>';
+}
+function batchesCard(a){
+  var c = S.cnc, take = c.stock.filter(function(s){ return s.kind !== "made"; });
+  var made = c.stock.filter(function(s){ return s.kind === "made" && (a === "Blanks" ? /^blank/i.test(s.item) : a === "Parts" ? !/^blank/i.test(s.item) : true); });
+  var low = made.filter(function(s){ return s.low; });
+  var h = '<div class="card"><h2>Batches</h2>';
+  if (low.length) h += '<div class="note" style="color:var(--amber);margin-bottom:8px">Needed: ' + low.map(function(s){ return esc(s.item) + " (" + s.stock + " left, min " + s.min + ")"; }).join(", ") + '</div>';
+  h += c.batches.length ? c.batches.map(function(b){
+    var on = SELB === b.id;
+    return '<div class="row" style="flex-wrap:wrap"><label style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="radio" name="selb" style="width:22px;height:22px"' + (on ? " checked" : "") +
+      ' onchange="SELB=\'' + b.id + '\';render()"> <span><b>' + esc(b.output) + '</b><div class="note">' + esc(b.id) + ' · ' + esc(b.worker) + (b.inputs ? ' · took ' + esc(b.inputs) : " · nothing taken yet") + '</div></span></label></div>' +
+      (on ? batchForms(b, take) : ""); }).join("")
+    : '<div class="empty">No open batches.</div>';
+  h += '<h2 style="margin-top:14px">New batch</h2><div class="actions"><select id="nbOut" style="max-width:260px;padding:10px">' + made.map(function(s){ return '<option>' + esc(s.item) + '</option>'; }).join("") +
+    '</select><button class="btn btn-p"' + (S.shift ? "" : " disabled") + ' onclick="batchStart()">Start batch</button></div>';
+  return h + '</div>';
+}
+function batchForms(b, take){
+  var opts = take.map(function(s){ return '<option value="' + esc(s.item) + '">' + esc(s.item) + ' (' + esc(s.unit) + ')</option>'; }).join("");
+  return '<div style="background:var(--wood-soft);border-radius:10px;padding:12px;margin:6px 0 10px;width:100%">' +
+    '<label class="note">Take material (a board: length in feet)</label><div class="actions" style="margin:6px 0 12px"><select id="btItem" style="max-width:220px;padding:10px">' + opts + '</select>' +
+    '<input id="btQty" type="number" step="0.1" placeholder="8" style="max-width:90px;padding:10px"><button class="btn btn-s" onclick="batchTake()">Take</button></div>' +
+    '<label class="note">Finish the batch</label><div class="actions" style="margin:6px 0 0"><input id="bfQty" type="number" placeholder="Good pieces" style="max-width:130px;padding:10px">' +
+    '<input id="bfDef" type="number" placeholder="Defects" style="max-width:100px;padding:10px"></div>' +
+    '<div class="actions" style="margin:6px 0 0"><select id="bfLeftItem" style="max-width:220px;padding:10px"><option value="">No leftover</option>' + opts + '</select>' +
+    '<input id="bfLeftQty" type="number" step="0.1" placeholder="Leftover" style="max-width:100px;padding:10px"><button class="btn btn-g" onclick="batchFinish()">Batch done</button></div></div>';
+}
+function selItems(o){
+  var maps = Object.keys(SELM).filter(function(k){ return SELM[k] && S.cnc && S.cnc.maps.some(function(m){ return m.serial === k; }); }).map(function(k){ return "map:" + k; });
+  var batch = SELB && S.cnc && S.cnc.batches.some(function(b){ return b.id === SELB; }) ? ["batch:" + SELB] : [];
+  if (o.links === "map") return maps.join(";");
+  if (o.links === "batch") return batch.join(";");
+  if (o.links === "any") return (maps.length ? maps : batch).join(";");
+  return "";
+}
+function mapStart(i){
+  var c = S.cnc, args = i >= 0 ? [c.orders[i].id, "", ""] : ["", $("nmTier").value, $("nmDesign").value];
+  call.apply(null, ["wkMapStart"].concat(args)).then(function(s){ var m = s.cnc.maps[s.cnc.maps.length - 1]; if (m) { SELM[m.serial] = true; toast("Map #" + m.serial + " started - write this number on the blank"); } });
+}
+function pickPhoto(inp){
+  var f = inp.files && inp.files[0]; PHOTO = null;
+  if (!f) return;
+  var img = new Image(), url = URL.createObjectURL(f);
+  img.onload = function(){
+    var k = Math.min(1, 1280 / Math.max(img.width, img.height)), cv = document.createElement("canvas");
+    cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    PHOTO = cv.toDataURL("image/jpeg", 0.8).split(",")[1]; URL.revokeObjectURL(url); toast("Photo ready");
+  };
+  img.src = url;
+}
+function mapDone(serial){
+  if (!PHOTO) { toast("Take the photo first.", true); return; }
+  var q = (document.querySelector('input[name="fq"]:checked') || {}).value || "ok", note = $("fNote").value;
+  $("busy").style.display = "grid";
+  fetch(API, { method: "POST", credentials: "omit", body: JSON.stringify({ t: TOKEN, serial: serial, data: PHOTO }) })
+    .then(function(r){ return r.json(); }).then(function(j){
+      if (!j.ok) throw new Error(j.error);
+      $("busy").style.display = "none";
+      return call("wkMapDone", serial, q, note, j.url).then(function(){ FIN = ""; PHOTO = null; delete SELM[serial]; toast("Map #" + serial + " done"); });
+    }).catch(function(e){ $("busy").style.display = "none"; toast("Photo not saved: " + e.message, true); });
+}
+function batchStart(){ call("wkBatchStart", $("nbOut").value).then(function(s){ var b = s.cnc.batches[s.cnc.batches.length - 1]; if (b) SELB = b.id; render(); toast("Batch started - take the material"); }); }
+function batchTake(){ call("wkBatchTake", SELB, $("btItem").value, $("btQty").value).then(function(){ toast("Taken"); }); }
+function batchFinish(){ call("wkBatchFinish", SELB, $("bfQty").value, $("bfDef").value, $("bfLeftItem").value, $("bfLeftQty").value).then(function(){ SELB = ""; render(); toast("Batch done"); }); }
+function stockCheck(){
+  var c = S.cnc;
+  if (!c) return '<header><h1>Stock check</h1></header><div class="card"><div class="empty">Not set up yet.</div></div>';
+  return '<header><h1>Stock check</h1></header><div class="card"><h2>Count what is on the shelf (Friday)</h2><div class="note" style="margin-bottom:10px">Boards in feet, the rest in pieces. Leave empty what you did not count.</div>' +
+    c.stock.map(function(s, i){ return '<div class="row"><div><b>' + esc(s.item) + '</b><div class="note">system: ' + s.stock + ' ' + esc(s.unit) + '</div></div><input id="sc' + i + '" type="number" step="0.1" style="max-width:110px;padding:10px"></div>'; }).join("") +
+    '<div class="actions"><button class="btn btn-g" onclick="countSave()">Save the count</button></div></div>';
+}
+function countSave(){
+  var parts = [];
+  S.cnc.stock.forEach(function(s, i){ var v = $("sc" + i).value; if (v !== "") parts.push(s.item + "|" + v); });
+  call("wkCount", parts.join(";")).then(function(){ toast("Count saved - thank you"); });
+}
+function start(i){ var o = S.ops[i]; call("wkStart", o.area, o.op, selItems(o)).then(function(){ toast("Started: " + o.op); }); }
 function clockOut(){ call("wkClockOut").then(function(){ toast("Clocked out. Anything running is paused until tomorrow."); }); }
 function help(){
   return '<header><h1>How to use this page</h1></header>' +
@@ -154,6 +261,16 @@ function help(){
     '<li><b>CNC:</b> press <b>Start: CNC cutting</b> when the machine starts. Do hand work meanwhile. Press <b>Cut finished</b> when it stops.</li>' +
     '<li><b>Glue or finish drying:</b> press <b>Pause</b>. Later press <b>Continue</b> in Paused / drying, or <b>Done</b> if nothing is left to do.</li>' +
     '<li><b>End of the day:</b> My day → <b>Clock out</b>. A job you were doing is paused and waits for you tomorrow.</li></ol></div>' +
+    '<div class="card"><h2>Maps</h2><ol class="steps">' +
+    '<li><b>New map:</b> CNC tab → Start a new map (an order first, or a size for stock). Write the number (#014) on the blank.</li>' +
+    '<li><b>Work on maps:</b> tick the map(s) in Maps in progress, then press the operation. Several maps at once are fine.</li>' +
+    '<li><b>Map finished:</b> Finish map → photo → OK or Defect → done. The cradle, card and box are taken off the stock by themselves.</li></ol></div>' +
+    '<div class="card"><h2>Batches (blanks, cradles, cards)</h2><ol class="steps">' +
+    '<li><b>Start:</b> Blanks or Parts tab → New batch → what it makes.</li>' +
+    '<li><b>Take material:</b> each board you take: species + length in feet (MDF: sheets, chips: pieces).</li>' +
+    '<li><b>Work:</b> choose the batch, then press the operation (sawing, glue-up…).</li>' +
+    '<li><b>Done:</b> good pieces, defects, and a leftover piece that goes back to the shelf.</li>' +
+    '<li><b>Friday:</b> Stock check tab - count what is on the shelf.</li></ol></div>' +
     '<div class="card"><h2>If you forgot</h2><ol class="steps">' +
     '<li><b>Forgot to Clock out:</b> the shift closes by itself in the evening and the office corrects the time.</li>' +
     '<li><b>Forgot to switch the job:</b> press the right operation as soon as you notice.</li>' +
@@ -167,10 +284,10 @@ function tick(){
   if (S.shift) S.shift.minutes += 0.5;
   if (S.running) S.running.minutes += 0.5;
   S.machine.forEach(function(m){ m.minutes += 0.5; });
-  if (VIEW === "My day" || VIEW === "CNC") render();
+  if (VIEW === "My day") render();  // V92: other tabs hold forms - no re-render under the fingers
 }
 var n = 0;
-setInterval(function(){ n++; if (n % 4 === 0) api("wkState", []).then(function(s){ S = s; render(); }, function(){}); else tick(); }, 30000);
+setInterval(function(){ n++; if (n % 4 === 0 && VIEW === "My day") api("wkState", []).then(function(s){ if (VIEW === "My day") { S = s; render(); } }, function(){}); else tick(); }, 30000);
 if (TOKEN) call("wkState").catch(function(){}); else noLink();
 </script>
 </body>
