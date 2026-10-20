@@ -46,6 +46,8 @@
   #toast.err{background:var(--red)}
   #busy{position:fixed;inset:0;background:rgba(246,243,238,.6);display:none;place-items:center;z-index:8;font-weight:600}
   #modal{position:fixed;inset:0;background:rgba(43,36,32,.45);display:none;z-index:10;padding:0 14px}
+  #pops{position:fixed;right:14px;top:14px;z-index:13;display:flex;flex-direction:column;gap:8px;width:min(360px,calc(100% - 28px))}
+  .pop{background:#fff;border:1px solid var(--line);border-left:4px solid var(--wood);border-radius:10px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
   .tour-on{position:relative;z-index:11;box-shadow:0 0 0 4px var(--amber),0 0 0 9999px rgba(43,36,32,.45);border-radius:10px}
   #tourbox{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);width:min(440px,calc(100% - 28px));background:#fff;border-radius:12px;padding:16px;z-index:12;display:none;box-shadow:0 8px 30px rgba(0,0,0,.25)}
   @media (max-width:760px){
@@ -546,10 +548,25 @@ function tick(){
   S.machine.forEach(function(m){ m.minutes += 0.5; });
   if (VIEW === "My day") render();  // V92: other tabs hold forms - no re-render under the fingers
 }
-var n = 0;
-setInterval(function(){ n++; if (n % 4 === 0 && VIEW === "My day") api("wkState", []).then(function(s){ if (VIEW === "My day") { S = s; render(); } }, function(){}); else tick(); }, 30000);
-if (DEMO) { simInit(); call("wkState").then(tourFirst); }  // V94: training mirror
-else if (TOKEN) call("wkState").then(tourFirst, function(){}); else noLink();
+// V95: every 2 minutes on every tab - a pop-up when the office gives a new task
+var n = 0, KNOWN = null;
+function pop(text, view){
+  var box = $("pops");
+  if (!box) { box = document.createElement("div"); box.id = "pops"; document.body.appendChild(box); }
+  var p = document.createElement("div"); p.className = "pop";
+  p.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px"><b>' + esc(text) + '</b><span style="cursor:pointer" onclick="this.closest(\'.pop\').remove()">×</span></div>' +
+    (view ? '<div class="actions" style="margin-top:8px"><button class="btn btn-p" onclick="go(\'' + view + '\');this.closest(\'.pop\').remove()">Open</button></div>' : "");
+  box.appendChild(p);
+  setTimeout(function(){ if (p.parentNode) p.remove(); }, 120000);
+}
+function newTasks(s){
+  var list = s.tasks || [];
+  if (KNOWN) list.forEach(function(t){ if (KNOWN.indexOf(t.id) < 0) pop("New task from the office: " + t.title, "Tasks"); });
+  KNOWN = list.map(function(t){ return t.id; });
+}
+setInterval(function(){ n++; tick(); if (n % 4 === 0) api("wkState", []).then(function(s){ newTasks(s); if (VIEW === "My day" || (VIEW === "Tasks" && !TWAIT)) { S = s; render(); } }, function(){}); }, 30000);
+if (DEMO) { simInit(); call("wkState").then(function(s){ newTasks(s); tourFirst(); }); }  // V94: training mirror
+else if (TOKEN) call("wkState").then(function(s){ newTasks(s); tourFirst(); }, function(){}); else noLink();  // V95: remember the tasks for pop-ups
 </script>
 </body>
 </html>
