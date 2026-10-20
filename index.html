@@ -37,6 +37,7 @@
   .row:last-child{border-bottom:0}
   .chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
   .c-green{background:var(--green-soft);color:var(--green)}.c-amber{background:var(--amber-soft);color:var(--amber)}.c-wood{background:var(--wood-soft);color:var(--wood)}
+  .c-red{background:var(--red-soft);color:var(--red)}.c-grey{background:#eee8e1;color:var(--muted)}
   .now{border-color:var(--green);background:var(--green-soft)}
   .empty{color:var(--muted);padding:8px 0}
   .steps{padding-left:20px;margin:0}.steps li{margin-bottom:8px}
@@ -44,6 +45,9 @@
   #toast{position:fixed;right:18px;bottom:18px;left:auto;background:#2b2420;color:#fff;padding:12px 16px;border-radius:8px;display:none;max-width:420px;z-index:9}
   #toast.err{background:var(--red)}
   #busy{position:fixed;inset:0;background:rgba(246,243,238,.6);display:none;place-items:center;z-index:8;font-weight:600}
+  #modal{position:fixed;inset:0;background:rgba(43,36,32,.45);display:none;z-index:10;padding:0 14px}
+  .tour-on{position:relative;z-index:11;box-shadow:0 0 0 4px var(--amber),0 0 0 9999px rgba(43,36,32,.45);border-radius:10px}
+  #tourbox{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);width:min(440px,calc(100% - 28px));background:#fff;border-radius:12px;padding:16px;z-index:12;display:none;box-shadow:0 8px 30px rgba(0,0,0,.25)}
   @media (max-width:760px){
     .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr} aside{padding:12px 10px 8px;position:sticky;top:0;z-index:5;min-width:0}
     .brand{padding:0 6px 8px} nav{flex-direction:row;overflow-x:auto;gap:6px;padding-bottom:4px}
@@ -67,7 +71,7 @@
 var API = "https://script.google.com/macros/s/AKfycbwSfMKRKSkvT3t7yJ7Ho2ExvUUcsXemMnavziDjfeaSg84TMki2E3ulvnlvSV4-gmGVog/exec";
 var TOKEN = new URLSearchParams(location.search).get("t") || "", S = null, VIEW = "My day", TABS = [];
 try { if (TOKEN) localStorage.setItem("shopWorkerToken", TOKEN); else TOKEN = localStorage.getItem("shopWorkerToken") || ""; } catch (e) {}
-var ICONS = { "My day": "▦", "General": "⚑", "Blanks": "▤", "CNC": "◈", "Hand work": "✋", "Parts": "▣", "Kitchens": "⌂", "Jobs": "☰", "Stock check": "✓", "Help": "?" };
+var ICONS = { "Tasks": "☑", "My day": "▦", "General": "⚑", "Blanks": "▤", "CNC": "◈", "Hand work": "✋", "Parts": "▣", "Kitchens": "⌂", "Jobs": "☰", "Stock check": "✓", "Help": "?" };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function hm(m){ m = Math.max(0, Math.round(m || 0)); return (m >= 60 ? Math.floor(m / 60) + " h " : "") + (m % 60) + " min"; }
@@ -77,8 +81,10 @@ var ACTIONS = { wkState: ["state"], wkClockIn: ["clockIn"], wkClockOut: ["clockO
                 wkMapStart: ["mapStart", "order", "tier", "design"], wkMapDone: ["mapDone", "id", "q", "note", "photo"],  // V92
                 wkBatchStart: ["batchStart", "out"], wkBatchTake: ["batchTake", "id", "item", "qty"],
                 wkBatchFinish: ["batchFinish", "id", "qty", "def", "leftItem", "leftQty"], wkCount: ["count", "c"],
-                wkFile: ["file", "id"], wkReport: ["report", "job", "type", "qty", "note", "photo"] };  // V93
+                wkFile: ["file", "id"], wkReport: ["report", "job", "type", "qty", "note", "photo"],  // V93
+                wkTaskStart: ["taskStart", "id"], wkTaskCheck: ["taskCheck", "id", "n", "on"], wkTaskWait: ["taskWait", "id", "why"], wkTaskDone: ["taskDone", "id"] };  // V94
 function api(fn, args){
+  if (DEMO) return new Promise(function(ok){ ok(sim(fn, args)); });  // V94: training mirror - nothing is sent
   var a = ACTIONS[fn], q = "?api=" + a[0] + "&t=" + encodeURIComponent(TOKEN);
   for (var i = 1; i < a.length; i++) q += "&" + a[i] + "=" + encodeURIComponent(args[i - 1] == null ? "" : args[i - 1]);
   return fetch(API + q, { credentials: "omit", cache: "no-store" }).then(function(r){ return r.json(); })
@@ -94,23 +100,27 @@ function call(fn){
     throw e;
   });
 }
-function noLink(msg){ $("nav").innerHTML = ""; $("main").innerHTML = '<div class="card"><div class="big">Open your personal link</div><div class="note">' + esc(msg || "This page needs the link the office sent you.") + ' Ask the office for a new link if it does not work.</div></div>'; }
+function noLink(msg){ $("nav").innerHTML = ""; $("main").innerHTML = '<div class="card"><div class="big">Open your personal link</div><div class="note">' + esc(msg || "This page needs the link the office sent you.") + ' Ask the office for a new link if it does not work.</div>' +
+  '<div class="actions"><button class="btn btn-s" onclick="location.search=\'?demo=1\'">Practise in training mode</button></div></div>'; }
 function areas(){ var a = []; S.ops.forEach(function(o){ if (a.indexOf(o.area) < 0) a.push(o.area); }); return a; }
 function go(v){ VIEW = v; render(); window.scrollTo(0, 0); }
 
 function render(){
-  $("who").textContent = S.name + (S.shift ? " · on shift" : "");
-  var tabs = TABS = ["My day"].concat(areas(), S.cnc ? ["Stock check"] : [], ["Help"]);
+  $("who").textContent = DEMO ? "TRAINING · nothing is saved" : S.name + (S.shift ? " · on shift" : "");
+  var tabs = TABS = ["My day"].concat(S.tasks ? ["Tasks"] : [], areas(), S.cnc ? ["Stock check"] : [], ["Help"]);  // V94: Tasks
   if (tabs.indexOf(VIEW) < 0) VIEW = "My day";
   $("nav").innerHTML = tabs.map(function(t, i){ return '<button class="' + (t === VIEW ? "on" : "") + '" onclick="go(TABS[' + i + '])"><span class="ico">' + (ICONS[t] || "•") + '</span>' + esc(t) + '</button>'; }).join("");
-  $("main").innerHTML = VIEW === "My day" ? myDay() : VIEW === "Help" ? help() : VIEW === "Stock check" ? stockCheck() : area(VIEW);
+  $("main").innerHTML = VIEW === "My day" ? myDay() : VIEW === "Help" ? help() : VIEW === "Stock check" ? stockCheck() : VIEW === "Tasks" ? tasksView() : area(VIEW);
+  var hd = $("main").querySelector("header");  // V94: "?" on every screen
+  if (hd && VIEW !== "Help") hd.insertAdjacentHTML("beforeend", '<button class="btn btn-s" id="qbtn" style="padding:8px 15px" title="Help for this screen" onclick="tip()">?</button>');
+  if (TI >= 0) tourMark();
 }
 
 function runningCard(){
   if (!S.running) return "";
   var r = S.running;
   return '<div class="card now"><div class="note">Working now · ' + esc(r.area) + '</div><div class="big">' + esc(r.op) + '</div>' +
-    '<div class="note">' + hm(r.minutes) + ' so far · started ' + esc(r.started) + (r.items ? ' · ' + esc(r.items.replace(/job:([^;]+)/g, function(x, k){ return kitName(k); }).replace(/map:/g, "#").replace(/batch:/g, "").replace(/;/g, ", ")) : "") + '</div>' +
+    '<div class="note">' + hm(r.minutes) + ' so far · started ' + esc(r.started) + (r.items ? ' · ' + esc(r.items.replace(/job:([^;]+)/g, function(x, k){ return kitName(k); }).replace(/task:([^;]+)/g, function(x, k){ return taskName(k); }).replace(/map:/g, "#").replace(/batch:/g, "").replace(/;/g, ", ")) : "") + '</div>' +
     '<div class="actions"><button class="btn btn-s" onclick="call(\'wkPause\')">Pause</button><button class="btn btn-g" onclick="call(\'wkDone\',\'' + r.opId + '\')">Done</button></div></div>';
 }
 function machineCards(){
@@ -126,6 +136,9 @@ function myDay(){
     ? '<div class="card"><div class="note">On shift since ' + esc(S.shift.since) + '</div><div class="big">' + hm(S.shift.minutes) + '</div><div class="actions"><button class="btn btn-r" onclick="clockOut()">Clock out</button></div></div>'
     : '<div class="card"><div class="big">Not clocked in</div><div class="note">Press Clock in when you start work.</div><div class="actions"><button class="btn btn-g" onclick="call(\'wkClockIn\')">Clock in</button></div></div>';
   h += runningCard() + machineCards();
+  var tl = S.tasks || [], to = tl.filter(function(t){ return t.overdue; }).length;  // V94: tasks waiting for the worker
+  if (tl.length) h += '<div class="card"><div class="row" style="padding:0"><div><b>' + tl.length + ' task' + (tl.length > 1 ? "s" : "") + ' for you</b>' + (to ? ' <span class="chip c-red">' + to + ' overdue</span>' : "") +
+    '<div class="note">' + esc(tl[0].title) + (tl.length > 1 ? " and more" : "") + '</div></div><button class="btn btn-s" onclick="go(\'Tasks\')">Open</button></div></div>';
   if (S.paused.length) h += '<div class="card"><h2>Paused / drying</h2>' + S.paused.map(function(p){
     return '<div class="row"><div><b>' + esc(p.op) + '</b> <span class="chip c-amber">' + esc(p.area) + '</span><div class="note">' + hm(p.minutes) + ' of work · paused ' + esc(p.since) + '</div></div>' +
       '<div class="actions" style="margin:0"><button class="btn btn-s"' + (S.shift ? "" : " disabled") + ' onclick="call(\'wkContinue\',\'' + p.opId + '\')">Continue</button><button class="btn btn-g" onclick="call(\'wkDone\',\'' + p.opId + '\')">Done</button></div></div>'; }).join("") + '</div>';
@@ -146,12 +159,12 @@ function area(a){
   if (list.some(function(o){ return o.kind === "machine"; })) h += machineCards();
   if (c && (L.map || L.any)) h += mapsCard();
   if (c && (L.batch || L.any)) h += batchesCard(a);
-  if (L.job) h += kitchensCard();  // V93
+  if (L.job) h += kitchensCard(a);  // V93; V94: Kitchens tab = kitchens, Jobs tab = construction jobs
   h += '<div class="card"><h2>Start an operation</h2><div class="ops">' + list.map(function(o){
     var busy = o.kind === "machine" && S.machine.length;
     return '<button class="btn' + (o.kind === "machine" ? " cnc" : "") + '"' + (S.shift && !busy ? "" : " disabled") + ' onclick="start(' + S.ops.indexOf(o) + ')">' +
       (o.kind === "machine" ? "▶ Start: " : "") + esc(o.op) + '</button>'; }).join("") + '</div>' +
-    '<div class="note" style="margin-top:10px">' + (L.job ? "Choose the kitchen above, then press the operation. " : L.map || L.batch || L.any ? "Tick the map(s) or choose the batch above, then press the operation. " : "") +
+    '<div class="note" style="margin-top:10px">' + (L.job ? "Choose the " + (a === "Kitchens" ? "kitchen" : "job") + " above, then press the operation. " : L.map || L.batch || L.any ? "Tick the map(s) or choose the batch above, then press the operation. " : "") +
     'Starting a new operation finishes the one you are doing now. The CNC runs on its own - start the cut, then do hand work.</div></div>';
   return h;
 }
@@ -230,6 +243,7 @@ function pickPhoto(inp){
 function mapDone(serial){
   if (!PHOTO) { toast("Take the photo first.", true); return; }
   var q = (document.querySelector('input[name="fq"]:checked') || {}).value || "ok", note = $("fNote").value;
+  if (DEMO) return call("wkMapDone", serial, q, note, "").then(function(){ FIN = ""; PHOTO = null; delete SELM[serial]; toast("Map #" + serial + " done"); });  // V94: no upload
   $("busy").style.display = "grid";
   fetch(API, { method: "POST", credentials: "omit", body: JSON.stringify({ t: TOKEN, serial: serial, data: PHOTO }) })
     .then(function(r){ return r.json(); }).then(function(j){
@@ -256,11 +270,11 @@ function countSave(){
 // ---------- V93: kitchens - choose the kitchen, its files, reports
 var SELK = "", KREP = "";
 function kitName(k){ var j = (S.kitchens || []).filter(function(x){ return x.key === k; })[0]; return j ? j.name : k; }
-function kitchensCard(){
-  var list = S.kitchens || [];
-  if (!list.length) return '<div class="card"><h2>Kitchens</h2><div class="empty">No kitchen in production right now.</div></div>';
-  return '<div class="card"><h2>Kitchens</h2>' + list.map(function(j, i){
-    var on = SELK === j.key, ops = Object.keys(j.ops);
+function kitchensCard(a){
+  var list = (S.kitchens || []).filter(function(j){ return (a === "Kitchens") === ((j.kind || "Kitchen") === "Kitchen"); });
+  if (!list.length) return '<div class="card"><h2>' + esc(a) + '</h2><div class="empty">Nothing in production right now.</div></div>';
+  return '<div class="card"><h2>' + esc(a) + '</h2>' + list.map(function(j){
+    var i = S.kitchens.indexOf(j), on = SELK === j.key, ops = Object.keys(j.ops);
     return '<div class="row" style="flex-wrap:wrap"><label style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="radio" name="selk" style="width:22px;height:22px"' + (on ? " checked" : "") +
       ' onchange="SELK=S.kitchens[' + i + '].key;KREP=\'\';render()"> <span><b>' + esc(j.name) + '</b><div class="note">' + esc(j.stage) + (ops.length ? " · " + ops.map(function(o){ return esc(o) + " " + hm(j.ops[o]); }).join(", ") : "") + '</div></span></label></div>' +
       (on ? kitchenDetail(j, i) : ""); }).join("") + '</div>';
@@ -292,16 +306,206 @@ function openFile(i, k){
 function sendReport(i){
   var j = S.kitchens[i], type = KREP, qty = $("krQty") ? $("krQty").value : "", note = $("krNote").value;
   var send = function(url){ return call("wkReport", j.key, type, qty, note, url || "").then(function(){ KREP = ""; PHOTO = null; render(); toast("Sent to the office"); }); };
-  if (!PHOTO) { send(""); return; }
+  if (!PHOTO || DEMO) { send(""); return; }  // V94: training mode sends no photo
   $("busy").style.display = "grid";
   fetch(API, { method: "POST", credentials: "omit", body: JSON.stringify({ t: TOKEN, job: j.key, data: PHOTO }) })
     .then(function(r){ return r.json(); }).then(function(x){ if (!x.ok) throw new Error(x.error); $("busy").style.display = "none"; return send(x.url); })
     .catch(function(e){ $("busy").style.display = "none"; toast("Photo not saved: " + e.message, true); });
 }
+// ---------- V94: help - "?" on each screen, the tour, the training mirror (?demo=1: made-up data, nothing is saved)
+var TIPS = {
+  "My day": ["My day", ["<b>Clock in</b> when you start work, <b>Clock out</b> when you leave. Your hours go to FreshBooks by themselves.",
+    "The green card is what you are doing now: <b>Pause</b> (drying, a break) or <b>Done</b>.",
+    "<b>Paused / drying</b>: jobs that wait for you. Press <b>Continue</b> or <b>Done</b>.",
+    "<b>What are you doing now?</b> opens the place in the shop where you start the next job.",
+    "<b>Today</b>: everything you did today, with the time."]],
+  "Tasks": ["Tasks", ["Tasks from the office, the most important first. <b>Overdue</b> means the date has passed.",
+    "<b>Start</b> when you begin a task - its time is counted like any job. Tick the steps as you do them.",
+    "<b>Waiting…</b> when you cannot go on (no material, a question): write why - the office gets it.",
+    "<b>Done</b> when it is finished."]],
+  "Stock check": ["Stock check", ["Every Friday count what is on the shelf.", "Boards in feet, MDF in sheets, the rest in pieces.",
+    "Leave empty what you did not count, then press <b>Save the count</b>."]]
+};
+function modal(html){
+  var m = $("modal");
+  if (!m) { m = document.createElement("div"); m.id = "modal"; m.onclick = function(e){ if (e.target === m) modal(); }; document.body.appendChild(m); }
+  if (!html) { m.style.display = "none"; return; }
+  m.innerHTML = '<div class="card" style="max-width:520px;margin:8vh auto;max-height:80vh;overflow:auto">' + html + '<div class="actions"><button class="btn btn-p" onclick="modal()">Got it</button></div></div>';
+  m.style.display = "block";
+}
+function tip(){
+  var t = TIPS[VIEW], list = S.ops.filter(function(o){ return o.area === VIEW; }), L = opLinks(list);
+  if (!t) {
+    var li = ["Press the operation you start. The one you did before is finished automatically."];
+    if (L.job) li.unshift("Choose the " + (VIEW === "Kitchens" ? "kitchen" : "job") + " first (the round button). Its files and the Report buttons are on its card.");
+    if (L.map) li.unshift("Tick the map(s) you work on, then press the operation. Several maps at once are fine.");
+    if (L.batch) li.unshift("Choose the batch (or start a new one), take the material you use, then press the operation.");
+    if (L.any) li.unshift("Tick the map(s) or choose the batch you cut.");
+    if (list.some(function(o){ return o.kind === "machine"; })) li.push("The CNC runs on its own: press <b>Start: …</b> when it starts and <b>Cut finished</b> when it stops. Do hand work meanwhile.");
+    if (!L.map && !L.batch && !L.any && !L.job) li.push("This is general shop time, not work on a product.");
+    t = [VIEW, li];
+  }
+  modal('<h2>' + esc(t[0]) + '</h2><ol class="steps">' + t[1].map(function(x){ return '<li>' + x + '</li>'; }).join("") + '</ol>');
+}
+var TOUR = [["#nav", "These are your tabs. <b>My day</b> is your clock; the others are the places in the shop."],
+  ["#main .card", "Start here every morning: <b>Clock in</b>. At the end of the day: <b>Clock out</b>."],
+  ["#qbtn", "Not sure what to press? Press <b>?</b> on any screen - it explains that screen."],
+  ["#nav button:last-child", "<b>Help</b> has the full guide, this tour and the training mode to practise."]], TI = -1;
+function tourMark(){
+  var old = document.querySelector(".tour-on");
+  if (old) old.classList.remove("tour-on");
+  var el = TI >= 0 && TI < TOUR.length ? document.querySelector(TOUR[TI][0]) : null;
+  if (el) { el.classList.add("tour-on"); if (el.scrollIntoView) el.scrollIntoView({ block: "center" }); }
+}
+function tour(i){
+  TI = i || 0;
+  modal();
+  go("My day");
+  var b = $("tourbox");
+  if (!b) { b = document.createElement("div"); b.id = "tourbox"; document.body.appendChild(b); }
+  if (TI >= TOUR.length) { TI = -1; tourMark(); b.style.display = "none"; try { localStorage.setItem("shopWorkerTour", "1"); } catch (e) {} return; }
+  tourMark();
+  b.innerHTML = '<div class="note">Step ' + (TI + 1) + ' of ' + TOUR.length + '</div><div style="margin:6px 0 4px">' + TOUR[TI][1] + '</div>' +
+    '<div class="actions"><button class="btn btn-p" onclick="tour(TI + 1)">' + (TI === TOUR.length - 1 ? "Finish" : "Next") + '</button><button class="btn btn-s" onclick="tour(99)">Skip</button></div>';
+  b.style.display = "block";
+}
+function tourFirst(){ var seen = false; try { seen = !!localStorage.getItem("shopWorkerTour"); } catch (e) {} if (DEMO || !seen) tour(0); }
+
+var DEMO = /[?&]demo=1/.test(location.search), SIM = null;
+function simInit(){
+  var stock = [["Maple board", "board", "LF", 24, 8], ["Cherry board", "board", "LF", 30, 8], ["Walnut board", "board", "LF", 18, 8], ["MDF sheet", "sheet", "sheet", 2, 1],
+    ["Box small", "unit", "pcs", 12, 5], ["Box medium", "unit", "pcs", 9, 5], ["Box large", "unit", "pcs", 6, 3], ["NFC chip", "unit", "pcs", 20, 10],
+    ["Blank 4x4 maple", "made", "pcs", 3, 2], ["Blank 9x9 cherry/walnut", "made", "pcs", 1, 2], ["Blank 13.5x9 cherry/walnut", "made", "pcs", 2, 2],
+    ["Cradle 9x9", "made", "pcs", 4, 2], ["Cradle 13.5x9", "made", "pcs", 2, 2], ["Business card", "made", "pcs", 5, 3]];
+  var ops = [["General", "Cleaning", "hand", "none"], ["General", "Machine maintenance", "hand", "none"], ["General", "Material pickup", "hand", "none"], ["General", "Other", "hand", "none"],
+    ["Blanks", "Sawing boards", "hand", "batch"], ["Blanks", "Glue-up", "hand", "batch"], ["Blanks", "Planing", "hand", "batch"], ["Blanks", "Cutting panels", "hand", "batch"],
+    ["CNC", "CNC cutting", "machine", "any"], ["CNC", "Load / set up machine", "hand", "any"],
+    ["Hand work", "Sanding", "hand", "map"], ["Hand work", "Finishing (oil / lacquer)", "hand", "map"], ["Hand work", "Packing", "hand", "map"],
+    ["Parts", "Cradles: staining", "hand", "batch"], ["Parts", "Business cards: NFC chips", "hand", "batch"],
+    ["Kitchens", "CNC cutting (kitchen)", "machine", "job"], ["Kitchens", "Load / unload CNC", "hand", "job"], ["Kitchens", "Edge banding", "hand", "job"],
+    ["Kitchens", "Assembly", "hand", "job"], ["Kitchens", "Doors / Shaker", "hand", "job"], ["Kitchens", "Finishing", "hand", "job"], ["Kitchens", "Install prep", "hand", "job"],
+    ["Jobs", "Prep", "hand", "job"], ["Jobs", "Demo", "hand", "job"], ["Jobs", "Fabrication", "hand", "job"], ["Jobs", "Install", "hand", "job"], ["Jobs", "Clean-up", "hand", "job"], ["Jobs", "Travel / pickup", "hand", "job"]];
+  SIM = { shift: 0, segs: [], seq: 0, serial: 13, batchN: 0,
+    ops: ops.map(function(r){ return { area: r[0], op: r[1], kind: r[2], links: r[3] }; }),
+    cnc: { tiers: [{ tier: "Small", size: "4x4" }, { tier: "Medium", size: "9x9" }, { tier: "Large", size: "13.5x9" }],
+      orders: [{ id: "O-DEMO1", tier: "Medium", design: "Gander Lake (sample)", due: "Fri" }],
+      maps: [{ serial: "013", tier: "Large", design: "Bonavista (sample)", worker: "Trainee", started: "yesterday" }], batches: [],
+      stock: stock.map(function(s){ return { item: s[0], kind: s[1], unit: s[2], stock: s[3], min: s[4], low: s[3] < s[4] }; }) },
+    tasks: [{ id: "T-DEMO1", title: "Sand and oil the sample cutting boards", instructions: "Grit 120, then 180. One coat of oil.", priority: "High", due: "Today", overdue: false,
+      job: "", status: "Open", reason: "", minutes: 0, steps: [{ text: "Sand 120", done: false }, { text: "Sand 180", done: false }, { text: "Oil", done: false }] },
+      { id: "T-DEMO2", title: "Clean the dust collector", instructions: "", priority: "Low", due: "", overdue: false, job: "", status: "Open", reason: "", minutes: 0, steps: [] }],
+    kitchens: [{ key: "DEMO-J1", name: "Sample Deck", stage: "Production", kind: "Construction", ops: {}, files: [] },
+      { key: "DEMO-K1", name: "Sample Kitchen", stage: "Production", kind: "Kitchen", ops: {},
+      files: [{ id: "demo1", name: "Sample_Shop.pdf", kind: "Shop PDF" }, { id: "demo2", name: "Sample_cutlist.csv", kind: "Cut list" }] }] };
+}
+function simFmt(t){ var d = new Date(t); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
+function simMin(a, b){ return Math.max(0, Math.round(((b || Date.now()) - a) / 60000)); }
+function simState(){
+  var last = {}, first = {}, work = {}, running = null, machine = [], paused = [], today = [];
+  SIM.segs.forEach(function(g){ if (!first[g.opId]) first[g.opId] = g; last[g.opId] = g; work[g.opId] = (work[g.opId] || 0) + simMin(g.start, g.end); });
+  Object.keys(last).forEach(function(k){
+    var g = last[k], v = { opId: k, area: g.area, op: g.op, items: g.items, started: simFmt(first[k].start), since: simFmt(g.end || g.start), minutes: work[k] };
+    if (g.kind === "machine") { if (!g.end) machine.push(v); return; }
+    if (!g.end) running = v; else if (g.reason === "pause" || g.reason === "clockout") paused.push(v);
+  });
+  SIM.segs.forEach(function(g){ today.push({ area: g.area, op: g.op, kind: g.kind, from: simFmt(g.start), to: g.end ? simFmt(g.end) : "", minutes: simMin(g.start, g.end) }); });
+  SIM.kitchens.forEach(function(j){ j.ops = {}; SIM.segs.forEach(function(g){ if (g.items === "job:" + j.key) j.ops[g.op] = (j.ops[g.op] || 0) + simMin(g.start, g.end); }); });
+  SIM.tasks.forEach(function(t){ t.minutes = 0; SIM.segs.forEach(function(g){ if (g.items === "task:" + t.id) t.minutes += simMin(g.start, g.end); }); });
+  return JSON.parse(JSON.stringify({ name: "Trainee", shift: SIM.shift ? { since: simFmt(SIM.shift), minutes: simMin(SIM.shift) } : null, running: running,
+    machine: machine, paused: paused, today: today, ops: SIM.ops, cnc: SIM.cnc, kitchens: SIM.kitchens,
+    tasks: SIM.tasks.filter(function(t){ return t.status !== "Done"; }) }));
+}
+function simClose(test, reason){ SIM.segs.forEach(function(g){ if (!g.end && test(g)) { g.end = Date.now(); g.reason = reason; } }); }
+function simStock(item, q){ SIM.cnc.stock.forEach(function(s){ if (s.item === item) { s.stock = Math.round((s.stock + q) * 100) / 100; s.low = s.stock < s.min; } }); }
+function simTask(id){ return SIM.tasks.filter(function(t){ return t.id === id; })[0]; }
+function simLast(id){ return SIM.segs.filter(function(g){ return g.opId === id; }).pop(); }
+/** The shop's rules, played in the browser: same answers and errors as the real portal, nothing is sent. */
+function sim(fn, a){
+  var c = SIM.cnc, hand = function(g){ return g.kind === "hand"; }, need = function(){ if (!SIM.shift) throw new Error("Clock in first."); };
+  switch (fn) {
+    case "wkClockIn": if (SIM.shift) throw new Error("You are already clocked in."); SIM.shift = Date.now(); break;
+    case "wkClockOut": if (!SIM.shift) throw new Error("You are not clocked in."); simClose(hand, "clockout"); SIM.shift = 0; break;
+    case "wkStart":
+      need();
+      var o = SIM.ops.filter(function(x){ return x.area === a[0] && x.op === a[1]; })[0];
+      if (o.links !== "none" && !a[2]) throw new Error(o.links === "batch" ? "Choose the batch first." : o.links === "map" ? "Tick the map(s) you work on first." :
+        o.links === "job" ? "Choose the kitchen or job first." : "Tick the map(s) or the batch first.");
+      if (o.kind === "machine") { if (SIM.segs.some(function(g){ return g.kind === "machine" && !g.end; })) throw new Error("The CNC is already running - press \"Cut finished\" first."); }
+      else simClose(hand, "next");
+      SIM.segs.push({ opId: "d" + (++SIM.seq), area: o.area, op: o.op, kind: o.kind, items: o.links === "none" ? "" : a[2], start: Date.now(), end: 0, reason: "" });
+      break;
+    case "wkPause": simClose(hand, "pause"); break;
+    case "wkContinue": need(); var p = simLast(a[0]); simClose(hand, "next"); SIM.segs.push({ opId: a[0], area: p.area, op: p.op, kind: "hand", items: p.items, start: Date.now(), end: 0, reason: "" }); break;
+    case "wkDone": var d = simLast(a[0]); if (!d.end) d.end = Date.now(); d.reason = "done"; if (/^task:/.test(d.items)) simTask(d.items.slice(5)).status = "Done"; break;
+    case "wkMachineStop": simClose(function(g){ return g.opId === a[0]; }, "done"); break;
+    case "wkMapStart":
+      need();
+      var ord = a[0] ? c.orders.filter(function(x){ return x.id === a[0]; })[0] : null;
+      c.maps.push({ serial: ("00" + (++SIM.serial)).slice(-3), tier: ord ? ord.tier : a[1], design: ord ? ord.design : a[2], worker: "Trainee", started: simFmt(Date.now()) });
+      if (ord) c.orders.splice(c.orders.indexOf(ord), 1);
+      break;
+    case "wkMapDone": c.maps = c.maps.filter(function(m){ return m.serial !== a[0]; }); simClose(function(g){ return hand(g) && g.items.split(";").indexOf("map:" + a[0]) >= 0; }, "done"); break;
+    case "wkBatchStart": need(); c.batches.push({ id: "B-DEMO" + (++SIM.batchN), output: a[0], worker: "Trainee", started: simFmt(Date.now()), inputs: "" }); break;
+    case "wkBatchTake":
+      if (!(Number(a[2]) > 0)) throw new Error("Enter how much you took.");
+      var b = c.batches.filter(function(x){ return x.id === a[0]; })[0];
+      b.inputs += (b.inputs ? "; " : "") + a[1] + ":" + a[2]; simStock(a[1], -Number(a[2]));
+      break;
+    case "wkBatchFinish":
+      if (a[1] === "" || !(Number(a[1]) >= 0)) throw new Error("Enter how many good pieces.");
+      var f = c.batches.filter(function(x){ return x.id === a[0]; })[0];
+      simStock(f.output, Number(a[1])); if (a[3] && Number(a[4]) > 0) simStock(a[3], Number(a[4]));
+      c.batches = c.batches.filter(function(x){ return x !== f; }); simClose(function(g){ return hand(g) && g.items === "batch:" + a[0]; }, "done");
+      break;
+    case "wkCount": String(a[0] || "").split(";").forEach(function(s){ var q = s.split("|"); c.stock.forEach(function(x){ if (x.item === q[0]) { x.stock = Number(q[1]); x.low = x.stock < x.min; } }); }); break;
+    case "wkReport":
+      if (a[1] === "Sheets used" && !(Number(a[2]) > 0)) throw new Error("Enter how many sheets.");
+      if (a[1] !== "Sheets used" && !String(a[3]).trim()) throw new Error("Write what happened.");
+      break;
+    case "wkFile": throw new Error("Training mode: files do not open here. At work this button opens the drawing.");
+    case "wkTaskStart":
+      need();
+      var t = simTask(a[0]); simClose(hand, "next");
+      SIM.segs.push({ opId: "t" + t.id, area: "Tasks", op: t.title, kind: "hand", items: "task:" + t.id, start: Date.now(), end: 0, reason: "" }); t.status = "In progress"; t.reason = "";
+      break;
+    case "wkTaskCheck": simTask(a[0]).steps[Number(a[1])].done = String(a[2]) === "1"; break;
+    case "wkTaskWait":
+      if (!String(a[1]).trim()) throw new Error("Write what you are waiting for.");
+      simClose(function(g){ return g.items === "task:" + a[0]; }, "next"); simTask(a[0]).status = "Waiting"; simTask(a[0]).reason = a[1];
+      break;
+    case "wkTaskDone": simClose(function(g){ return g.items === "task:" + a[0]; }, "done"); simTask(a[0]).status = "Done"; break;
+  }
+  return simState();
+}
+// ---------- V94: Tasks tab - tasks from the office (priority, due date, steps, Waiting with the reason)
+var TWAIT = "";
+function taskName(id){ var t = (S.tasks || []).filter(function(x){ return x.id === id; })[0]; return t ? t.title : "task"; }
+function tasksView(){
+  var list = S.tasks || [], h = '<header><h1>Tasks</h1><div class="note">' + list.length + ' open</div></header>';
+  if (!list.length) return h + '<div class="card"><div class="empty">No tasks for you right now. The office adds them in Shop Hub.</div></div>';
+  return h + list.map(function(t, i){
+    var on = S.running && S.running.items === "task:" + t.id, pc = { High: "c-red", Normal: "c-wood", Low: "c-grey" }[t.priority] || "c-wood";
+    var st = t.status === "Waiting" ? '<span class="chip c-amber">Waiting: ' + esc(t.reason) + '</span>' : t.status === "In progress" ? '<span class="chip c-green">In progress</span>' : "";
+    return '<div class="card' + (on ? " now" : "") + '"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b style="font-size:17px">' + esc(t.title) + '</b>' +
+      '<span><span class="chip ' + pc + '">' + esc(t.priority) + '</span> ' + (t.due ? '<span class="chip ' + (t.overdue ? "c-red" : "c-grey") + '">' + (t.overdue ? "Overdue · " : "Due ") + esc(t.due) + '</span>' : "") + '</span></div>' +
+      '<div class="note" style="margin:4px 0 8px">' + (t.job ? esc(t.job) + ' · ' : "") + (t.minutes ? hm(t.minutes) + ' of work ' : "") + st + '</div>' +
+      (t.instructions ? '<div style="white-space:pre-wrap;margin-bottom:8px">' + esc(t.instructions) + '</div>' : "") +
+      t.steps.map(function(s, k){ return '<label style="display:flex;gap:10px;align-items:center;padding:6px 0"><input type="checkbox" style="width:22px;height:22px"' + (s.done ? " checked" : "") +
+        ' onchange="call(\'wkTaskCheck\',S.tasks[' + i + '].id,' + k + ',this.checked?1:0)"> <span' + (s.done ? ' style="text-decoration:line-through;color:var(--muted)"' : "") + '>' + esc(s.text) + '</span></label>'; }).join("") +
+      (TWAIT === t.id ? '<div class="actions"><input id="twWhy" placeholder="What are you waiting for?" style="flex:1;min-width:200px;padding:10px"><button class="btn btn-p" onclick="taskWait(' + i + ')">Send</button><button class="btn btn-s" onclick="TWAIT=\'\';render()">Close</button></div>' :
+        '<div class="actions">' + (on ? "" : '<button class="btn btn-p"' + (S.shift ? "" : " disabled") + ' onclick="call(\'wkTaskStart\',S.tasks[' + i + '].id).then(function(){ toast(\'Started: \' + S.running.op); })">Start</button>') +
+        '<button class="btn btn-s" onclick="TWAIT=S.tasks[' + i + '].id;render()">Waiting…</button>' +
+        '<button class="btn btn-g" onclick="call(\'wkTaskDone\',S.tasks[' + i + '].id).then(function(){ toast(\'Task done\'); })">Done</button></div>') + '</div>';
+  }).join("");
+}
+function taskWait(i){ call("wkTaskWait", S.tasks[i].id, $("twWhy").value).then(function(){ TWAIT = ""; render(); toast("The office will see it"); }); }
 function start(i){ var o = S.ops[i]; call("wkStart", o.area, o.op, selItems(o)).then(function(){ toast("Started: " + o.op); }); }
 function clockOut(){ call("wkClockOut").then(function(){ toast("Clocked out. Anything running is paused until tomorrow."); }); }
 function help(){
   return '<header><h1>How to use this page</h1></header>' +
+    '<div class="card"><h2>Learn</h2><div class="actions" style="margin-top:0"><button class="btn btn-p" onclick="tour(0)">Show the tour</button>' +
+    (DEMO ? '<button class="btn btn-s" onclick="location.search=\'\'">Leave training mode</button>' : '<button class="btn btn-s" onclick="location.search=\'?demo=1\'">Practise in training mode</button>') +
+    '</div><div class="note" style="margin-top:8px">Training mode is this same page with made-up maps and a sample kitchen. Press anything: nothing reaches the shop or FreshBooks. Press <b>?</b> on any screen for help with that screen.</div></div>' +
     '<div class="card"><h2>Every day</h2><ol class="steps">' +
     '<li><b>Start of the day:</b> My day → <b>Clock in</b>.</li>' +
     '<li><b>Start a job:</b> open the tab (Blanks, CNC, Hand work…) → press the operation. A green card shows what you are doing now.</li>' +
@@ -324,6 +528,9 @@ function help(){
     '<li><b>Files:</b> the shop drawings (PDF), the cut list and the CNC files of the kitchen are on its card - press a file to open it.</li>' +
     '<li><b>CNC:</b> press <b>Start: CNC cutting (kitchen)</b> when the machine starts a kitchen sheet; <b>Cut finished</b> when it stops.</li>' +
     '<li><b>Report:</b> how many sheets you used, a problem (with a photo) or a note - the office sees it the same day.</li></ol></div>' +
+    '<div class="card"><h2>Tasks and jobs</h2><ol class="steps">' +
+    '<li><b>Tasks tab:</b> what the office asks you to do, most important first. Start → tick the steps → Done. Stuck? <b>Waiting…</b> and write why.</li>' +
+    '<li><b>Jobs tab:</b> construction jobs - choose the job, then press what you do (Prep, Fabrication, Install…). Your hours go to that job.</li></ol></div>' +
     '<div class="card"><h2>If you forgot</h2><ol class="steps">' +
     '<li><b>Forgot to Clock out:</b> the shift closes by itself in the evening and the office corrects the time.</li>' +
     '<li><b>Forgot to switch the job:</b> press the right operation as soon as you notice.</li>' +
@@ -341,7 +548,8 @@ function tick(){
 }
 var n = 0;
 setInterval(function(){ n++; if (n % 4 === 0 && VIEW === "My day") api("wkState", []).then(function(s){ if (VIEW === "My day") { S = s; render(); } }, function(){}); else tick(); }, 30000);
-if (TOKEN) call("wkState").catch(function(){}); else noLink();
+if (DEMO) { simInit(); call("wkState").then(tourFirst); }  // V94: training mirror
+else if (TOKEN) call("wkState").then(tourFirst, function(){}); else noLink();
 </script>
 </body>
 </html>
