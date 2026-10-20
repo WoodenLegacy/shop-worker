@@ -76,7 +76,8 @@ var ACTIONS = { wkState: ["state"], wkClockIn: ["clockIn"], wkClockOut: ["clockO
                 wkContinue: ["continue", "id"], wkDone: ["done", "id"], wkMachineStop: ["machineStop", "id"],
                 wkMapStart: ["mapStart", "order", "tier", "design"], wkMapDone: ["mapDone", "id", "q", "note", "photo"],  // V92
                 wkBatchStart: ["batchStart", "out"], wkBatchTake: ["batchTake", "id", "item", "qty"],
-                wkBatchFinish: ["batchFinish", "id", "qty", "def", "leftItem", "leftQty"], wkCount: ["count", "c"] };
+                wkBatchFinish: ["batchFinish", "id", "qty", "def", "leftItem", "leftQty"], wkCount: ["count", "c"],
+                wkFile: ["file", "id"], wkReport: ["report", "job", "type", "qty", "note", "photo"] };  // V93
 function api(fn, args){
   var a = ACTIONS[fn], q = "?api=" + a[0] + "&t=" + encodeURIComponent(TOKEN);
   for (var i = 1; i < a.length; i++) q += "&" + a[i] + "=" + encodeURIComponent(args[i - 1] == null ? "" : args[i - 1]);
@@ -109,7 +110,7 @@ function runningCard(){
   if (!S.running) return "";
   var r = S.running;
   return '<div class="card now"><div class="note">Working now · ' + esc(r.area) + '</div><div class="big">' + esc(r.op) + '</div>' +
-    '<div class="note">' + hm(r.minutes) + ' so far · started ' + esc(r.started) + (r.items ? ' · ' + esc(r.items.replace(/map:/g, "#").replace(/batch:/g, "").replace(/;/g, ", ")) : "") + '</div>' +
+    '<div class="note">' + hm(r.minutes) + ' so far · started ' + esc(r.started) + (r.items ? ' · ' + esc(r.items.replace(/job:([^;]+)/g, function(x, k){ return kitName(k); }).replace(/map:/g, "#").replace(/batch:/g, "").replace(/;/g, ", ")) : "") + '</div>' +
     '<div class="actions"><button class="btn btn-s" onclick="call(\'wkPause\')">Pause</button><button class="btn btn-g" onclick="call(\'wkDone\',\'' + r.opId + '\')">Done</button></div></div>';
 }
 function machineCards(){
@@ -145,11 +146,12 @@ function area(a){
   if (list.some(function(o){ return o.kind === "machine"; })) h += machineCards();
   if (c && (L.map || L.any)) h += mapsCard();
   if (c && (L.batch || L.any)) h += batchesCard(a);
+  if (L.job) h += kitchensCard();  // V93
   h += '<div class="card"><h2>Start an operation</h2><div class="ops">' + list.map(function(o){
     var busy = o.kind === "machine" && S.machine.length;
     return '<button class="btn' + (o.kind === "machine" ? " cnc" : "") + '"' + (S.shift && !busy ? "" : " disabled") + ' onclick="start(' + S.ops.indexOf(o) + ')">' +
       (o.kind === "machine" ? "▶ Start: " : "") + esc(o.op) + '</button>'; }).join("") + '</div>' +
-    '<div class="note" style="margin-top:10px">' + (L.map || L.batch || L.any ? "Tick the map(s) or choose the batch above, then press the operation. " : "") +
+    '<div class="note" style="margin-top:10px">' + (L.job ? "Choose the kitchen above, then press the operation. " : L.map || L.batch || L.any ? "Tick the map(s) or choose the batch above, then press the operation. " : "") +
     'Starting a new operation finishes the one you are doing now. The CNC runs on its own - start the cut, then do hand work.</div></div>';
   return h;
 }
@@ -206,6 +208,7 @@ function selItems(o){
   if (o.links === "map") return maps.join(";");
   if (o.links === "batch") return batch.join(";");
   if (o.links === "any") return (maps.length ? maps : batch).join(";");
+  if (o.links === "job") return SELK && kitName(SELK) !== SELK ? "job:" + SELK : "";  // V93
   return "";
 }
 function mapStart(i){
@@ -250,6 +253,51 @@ function countSave(){
   S.cnc.stock.forEach(function(s, i){ var v = $("sc" + i).value; if (v !== "") parts.push(s.item + "|" + v); });
   call("wkCount", parts.join(";")).then(function(){ toast("Count saved - thank you"); });
 }
+// ---------- V93: kitchens - choose the kitchen, its files, reports
+var SELK = "", KREP = "";
+function kitName(k){ var j = (S.kitchens || []).filter(function(x){ return x.key === k; })[0]; return j ? j.name : k; }
+function kitchensCard(){
+  var list = S.kitchens || [];
+  if (!list.length) return '<div class="card"><h2>Kitchens</h2><div class="empty">No kitchen in production right now.</div></div>';
+  return '<div class="card"><h2>Kitchens</h2>' + list.map(function(j, i){
+    var on = SELK === j.key, ops = Object.keys(j.ops);
+    return '<div class="row" style="flex-wrap:wrap"><label style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="radio" name="selk" style="width:22px;height:22px"' + (on ? " checked" : "") +
+      ' onchange="SELK=S.kitchens[' + i + '].key;KREP=\'\';render()"> <span><b>' + esc(j.name) + '</b><div class="note">' + esc(j.stage) + (ops.length ? " · " + ops.map(function(o){ return esc(o) + " " + hm(j.ops[o]); }).join(", ") : "") + '</div></span></label></div>' +
+      (on ? kitchenDetail(j, i) : ""); }).join("") + '</div>';
+}
+function kitchenDetail(j, i){
+  var h = '<div style="background:var(--wood-soft);border-radius:10px;padding:12px;margin:6px 0 10px;width:100%">';
+  h += '<label class="note">Files</label><div class="actions" style="margin:6px 0 12px">' + (j.files.length ? j.files.map(function(f, k){
+    return '<button class="btn btn-s" onclick="openFile(' + i + ',' + k + ')">' + esc(f.name) + '</button>'; }).join("") : '<span class="note">No files yet - the office sends them from the cabinet program.</span>') + '</div>';
+  h += '<label class="note">Report</label><div class="actions" style="margin:6px 0 0">' + ["Sheets used", "Problem", "Note"].map(function(t){
+    return '<button class="btn ' + (KREP === t ? "btn-p" : "btn-s") + '" onclick="KREP=KREP===\'' + t + '\'?\'\':\'' + t + '\';PHOTO=null;render()">' + t + '</button>'; }).join("") + '</div>';
+  if (KREP) h += '<div style="margin-top:10px">' + (KREP === "Sheets used" ? '<input id="krQty" type="number" step="1" placeholder="Sheets" style="max-width:110px;padding:10px;margin-bottom:8px">' : "") +
+    '<input id="krNote" placeholder="' + (KREP === "Sheets used" ? "Note (optional)" : "What happened") + '" style="width:100%;padding:10px;margin-bottom:8px">' +
+    (KREP === "Sheets used" ? "" : '<label class="note">Photo (optional)</label><input type="file" accept="image/*" capture="environment" onchange="pickPhoto(this)" style="margin:6px 0 10px">') +
+    '<div class="actions"><button class="btn btn-g" onclick="sendReport(' + i + ')">Send</button></div></div>';
+  return h + '</div>';
+}
+function openFile(i, k){
+  var f = S.kitchens[i].files[k], w = /\.pdf$/i.test(f.name) ? window.open("", "_blank") : null;
+  $("busy").style.display = "grid";
+  api("wkFile", [f.id]).then(function(x){
+    $("busy").style.display = "none";
+    var bin = atob(x.data), arr = new Uint8Array(bin.length);
+    for (var n = 0; n < bin.length; n++) arr[n] = bin.charCodeAt(n);
+    var url = URL.createObjectURL(new Blob([arr], { type: x.mime }));
+    if (w) { w.location = url; return; }
+    var a = document.createElement("a"); a.href = url; a.download = x.name; document.body.appendChild(a); a.click(); a.remove();
+  }, function(e){ $("busy").style.display = "none"; if (w) w.close(); toast(e.message, true); });
+}
+function sendReport(i){
+  var j = S.kitchens[i], type = KREP, qty = $("krQty") ? $("krQty").value : "", note = $("krNote").value;
+  var send = function(url){ return call("wkReport", j.key, type, qty, note, url || "").then(function(){ KREP = ""; PHOTO = null; render(); toast("Sent to the office"); }); };
+  if (!PHOTO) { send(""); return; }
+  $("busy").style.display = "grid";
+  fetch(API, { method: "POST", credentials: "omit", body: JSON.stringify({ t: TOKEN, job: j.key, data: PHOTO }) })
+    .then(function(r){ return r.json(); }).then(function(x){ if (!x.ok) throw new Error(x.error); $("busy").style.display = "none"; return send(x.url); })
+    .catch(function(e){ $("busy").style.display = "none"; toast("Photo not saved: " + e.message, true); });
+}
 function start(i){ var o = S.ops[i]; call("wkStart", o.area, o.op, selItems(o)).then(function(){ toast("Started: " + o.op); }); }
 function clockOut(){ call("wkClockOut").then(function(){ toast("Clocked out. Anything running is paused until tomorrow."); }); }
 function help(){
@@ -271,6 +319,11 @@ function help(){
     '<li><b>Work:</b> choose the batch, then press the operation (sawing, glue-up…).</li>' +
     '<li><b>Done:</b> good pieces, defects, and a leftover piece that goes back to the shelf.</li>' +
     '<li><b>Friday:</b> Stock check tab - count what is on the shelf.</li></ol></div>' +
+    '<div class="card"><h2>Kitchens</h2><ol class="steps">' +
+    '<li><b>Choose the kitchen</b> on the Kitchens tab, then press the stage you do (Edge banding, Assembly…). Your hours go to that kitchen.</li>' +
+    '<li><b>Files:</b> the shop drawings (PDF), the cut list and the CNC files of the kitchen are on its card - press a file to open it.</li>' +
+    '<li><b>CNC:</b> press <b>Start: CNC cutting (kitchen)</b> when the machine starts a kitchen sheet; <b>Cut finished</b> when it stops.</li>' +
+    '<li><b>Report:</b> how many sheets you used, a problem (with a photo) or a note - the office sees it the same day.</li></ol></div>' +
     '<div class="card"><h2>If you forgot</h2><ol class="steps">' +
     '<li><b>Forgot to Clock out:</b> the shift closes by itself in the evening and the office corrects the time.</li>' +
     '<li><b>Forgot to switch the job:</b> press the right operation as soon as you notice.</li>' +
