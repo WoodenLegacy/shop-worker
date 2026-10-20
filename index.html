@@ -73,7 +73,7 @@
 var API = "https://script.google.com/macros/s/AKfycbwSfMKRKSkvT3t7yJ7Ho2ExvUUcsXemMnavziDjfeaSg84TMki2E3ulvnlvSV4-gmGVog/exec";
 var TOKEN = new URLSearchParams(location.search).get("t") || "", S = null, VIEW = "My day", TABS = [];
 try { if (TOKEN) localStorage.setItem("shopWorkerToken", TOKEN); else TOKEN = localStorage.getItem("shopWorkerToken") || ""; } catch (e) {}
-var ICONS = { "Tasks": "☑", "My day": "▦", "General": "⚑", "Blanks": "▤", "CNC": "◈", "Hand work": "✋", "Parts": "▣", "Kitchens": "⌂", "Jobs": "☰", "Stock check": "✓", "Help": "?" };
+var ICONS = { "Tasks": "☑", "My day": "▦", "General": "⚑", "Blanks": "▤", "Batches": "▤", "CNC": "◈", "Hand work": "✋", "Parts": "▣", "Kitchens": "⌂", "Jobs": "☰", "Stock check": "✓", "Help": "?" };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function hm(m){ m = Math.max(0, Math.round(m || 0)); return (m >= 60 ? Math.floor(m / 60) + " h " : "") + (m % 60) + " min"; }
@@ -283,8 +283,11 @@ function kitchensCard(a){
 }
 function kitchenDetail(j, i){
   var h = '<div style="background:var(--wood-soft);border-radius:10px;padding:12px;margin:6px 0 10px;width:100%">';
-  h += '<label class="note">Files</label><div class="actions" style="margin:6px 0 12px">' + (j.files.length ? j.files.map(function(f, k){
-    return '<button class="btn btn-s" onclick="openFile(' + i + ',' + k + ')">' + esc(f.name) + '</button>'; }).join("") : '<span class="note">No files yet - the office sends them from the cabinet program.</span>') + '</div>';
+  var main = [], tech = [], local = "";  // V97: drawings + main DXF first; the rest under "Technical files"
+  j.files.forEach(function(f, k){ (f.name.indexOf("/") >= 0 ? tech : main).push('<button class="btn btn-s" onclick="openFile(' + i + ',' + k + ')">' + esc(f.name.split("/").pop()) + '</button>'); if (f.local) local = f.local; });
+  h += '<label class="note">Files</label><div class="actions" style="margin:6px 0 ' + (tech.length || local ? 6 : 12) + 'px">' + (main.length ? main.join("") : '<span class="note">No files yet - the office sends them from the cabinet program.</span>') + '</div>';
+  if (local) h += '<div class="note" style="margin-bottom:6px">On the shop computer: <b>' + esc(local) + '</b> <button class="btn btn-s" onclick="copyLocal(' + i + ')">Copy</button></div>';
+  if (tech.length) h += '<details style="margin-bottom:12px"><summary class="note">Technical files (' + tech.length + ') - VCarve uses them by itself</summary><div class="actions" style="margin-top:6px">' + tech.join("") + '</div></details>';
   h += '<label class="note">Report</label><div class="actions" style="margin:6px 0 0">' + ["Sheets used", "Problem", "Note"].map(function(t){
     return '<button class="btn ' + (KREP === t ? "btn-p" : "btn-s") + '" onclick="KREP=KREP===\'' + t + '\'?\'\':\'' + t + '\';PHOTO=null;render()">' + t + '</button>'; }).join("") + '</div>';
   if (KREP) h += '<div style="margin-top:10px">' + (KREP === "Sheets used" ? '<input id="krQty" type="number" step="1" placeholder="Sheets" style="max-width:110px;padding:10px;margin-bottom:8px">' : "") +
@@ -293,6 +296,8 @@ function kitchenDetail(j, i){
     '<div class="actions"><button class="btn btn-g" onclick="sendReport(' + i + ')">Send</button></div></div>';
   return h + '</div>';
 }
+function copyLocal(i){ var f = S.kitchens[i].files.filter(function(x){ return x.local; })[0]; if (f) copyText(f.local); }
+function copyText(t){ (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ toast("Copied - paste it in File Explorer or VCarve"); }, function(){ toast(t); }); }  // V97
 function openFile(i, k){
   var f = S.kitchens[i].files[k], w = /\.pdf$/i.test(f.name) ? window.open("", "_blank") : null;
   $("busy").style.display = "grid";
@@ -380,10 +385,10 @@ function simInit(){
     ["Blank 4x4 maple", "made", "pcs", 3, 2], ["Blank 9x9 cherry/walnut", "made", "pcs", 1, 2], ["Blank 13.5x9 cherry/walnut", "made", "pcs", 2, 2],
     ["Cradle 9x9", "made", "pcs", 4, 2], ["Cradle 13.5x9", "made", "pcs", 2, 2], ["Business card", "made", "pcs", 5, 3]];
   var ops = [["General", "Cleaning", "hand", "none"], ["General", "Machine maintenance", "hand", "none"], ["General", "Material pickup", "hand", "none"], ["General", "Other", "hand", "none"],
-    ["Blanks", "Sawing boards", "hand", "batch"], ["Blanks", "Glue-up", "hand", "batch"], ["Blanks", "Planing", "hand", "batch"], ["Blanks", "Cutting panels", "hand", "batch"],
+    ["Batches", "Sawing boards", "hand", "batch"], ["Batches", "Glue-up", "hand", "batch"], ["Batches", "Planing", "hand", "batch"], ["Batches", "Cutting panels", "hand", "batch"],
     ["CNC", "CNC cutting", "machine", "any"], ["CNC", "Load / set up machine", "hand", "any"],
     ["Hand work", "Sanding", "hand", "map"], ["Hand work", "Finishing (oil / lacquer)", "hand", "map"], ["Hand work", "Packing", "hand", "map"],
-    ["Parts", "Cradles: staining", "hand", "batch"], ["Parts", "Business cards: NFC chips", "hand", "batch"],
+    ["Batches", "Cradles: staining", "hand", "batch"], ["Batches", "Business cards: NFC chips", "hand", "batch"],
     ["Kitchens", "CNC cutting (kitchen)", "machine", "job"], ["Kitchens", "Load / unload CNC", "hand", "job"], ["Kitchens", "Edge banding", "hand", "job"],
     ["Kitchens", "Assembly", "hand", "job"], ["Kitchens", "Doors / Shaker", "hand", "job"], ["Kitchens", "Finishing", "hand", "job"], ["Kitchens", "Install prep", "hand", "job"],
     ["Jobs", "Prep", "hand", "job"], ["Jobs", "Demo", "hand", "job"], ["Jobs", "Fabrication", "hand", "job"], ["Jobs", "Install", "hand", "job"], ["Jobs", "Clean-up", "hand", "job"], ["Jobs", "Travel / pickup", "hand", "job"]];
@@ -398,7 +403,7 @@ function simInit(){
       { id: "T-DEMO2", title: "Clean the dust collector", instructions: "", priority: "Low", due: "", overdue: false, job: "", status: "Open", reason: "", minutes: 0, steps: [] }],
     kitchens: [{ key: "DEMO-J1", name: "Sample Deck", stage: "Production", kind: "Construction", ops: {}, files: [] },
       { key: "DEMO-K1", name: "Sample Kitchen", stage: "Production", kind: "Kitchen", ops: {},
-      files: [{ id: "demo1", name: "Sample_Shop.pdf", kind: "Shop PDF" }, { id: "demo2", name: "Sample_cutlist.csv", kind: "Cut list" }] }] };
+      files: [{ id: "demo1", name: "Sample_Shop.pdf", kind: "Shop PDF", local: "C:\\Jobs\\Sample Kitchen" }, { id: "demo3", name: "Sample_AltMill_CAM.dxf", kind: "CNC file" }, { id: "demo2", name: "Technical/Sample_cutlist.csv", kind: "Cut list" }] }] };
 }
 function simFmt(t){ var d = new Date(t); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
 function simMin(a, b){ return Math.max(0, Math.round(((b || Date.now()) - a) / 60000)); }
@@ -510,7 +515,7 @@ function help(){
     '</div><div class="note" style="margin-top:8px">Training mode is this same page with made-up maps and a sample kitchen. Press anything: nothing reaches the shop or FreshBooks. Press <b>?</b> on any screen for help with that screen.</div></div>' +
     '<div class="card"><h2>Every day</h2><ol class="steps">' +
     '<li><b>Start of the day:</b> My day → <b>Clock in</b>.</li>' +
-    '<li><b>Start a job:</b> open the tab (Blanks, CNC, Hand work…) → press the operation. A green card shows what you are doing now.</li>' +
+    '<li><b>Start a job:</b> open the tab (Batches, CNC, Hand work…) → press the operation. A green card shows what you are doing now.</li>' +
     '<li><b>Next job:</b> just press the next operation. The previous one is finished automatically.</li>' +
     '<li><b>CNC:</b> press <b>Start: CNC cutting</b> when the machine starts. Do hand work meanwhile. Press <b>Cut finished</b> when it stops.</li>' +
     '<li><b>Glue or finish drying:</b> press <b>Pause</b>. Later press <b>Continue</b> in Paused / drying, or <b>Done</b> if nothing is left to do.</li>' +
@@ -520,14 +525,14 @@ function help(){
     '<li><b>Work on maps:</b> tick the map(s) in Maps in progress, then press the operation. Several maps at once are fine.</li>' +
     '<li><b>Map finished:</b> Finish map → photo → OK or Defect → done. The cradle, card and box are taken off the stock by themselves.</li></ol></div>' +
     '<div class="card"><h2>Batches (blanks, cradles, cards)</h2><ol class="steps">' +
-    '<li><b>Start:</b> Blanks or Parts tab → New batch → what it makes.</li>' +
+    '<li><b>Start:</b> Batches tab → New batch → what it makes (blanks, cradles, cards).</li>' +
     '<li><b>Take material:</b> each board you take: species + length in feet (MDF: sheets, chips: pieces).</li>' +
     '<li><b>Work:</b> choose the batch, then press the operation (sawing, glue-up…).</li>' +
     '<li><b>Done:</b> good pieces, defects, and a leftover piece that goes back to the shelf.</li>' +
     '<li><b>Friday:</b> Stock check tab - count what is on the shelf.</li></ol></div>' +
     '<div class="card"><h2>Kitchens</h2><ol class="steps">' +
     '<li><b>Choose the kitchen</b> on the Kitchens tab, then press the stage you do (Edge banding, Assembly…). Your hours go to that kitchen.</li>' +
-    '<li><b>Files:</b> the shop drawings (PDF), the cut list and the CNC files of the kitchen are on its card - press a file to open it.</li>' +
+    '<li><b>Files:</b> the shop drawing (PDF) and the main CNC file (DXF) are on its card; the rest is under Technical files. "On the shop computer" shows the folder with the original files.</li>' +
     '<li><b>CNC:</b> press <b>Start: CNC cutting (kitchen)</b> when the machine starts a kitchen sheet; <b>Cut finished</b> when it stops.</li>' +
     '<li><b>Report:</b> how many sheets you used, a problem (with a photo) or a note - the office sees it the same day.</li></ol></div>' +
     '<div class="card"><h2>Tasks and jobs</h2><ol class="steps">' +
