@@ -19,7 +19,7 @@
   nav{display:flex;flex-direction:column;gap:4px}
   nav button{all:unset;display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:8px;cursor:pointer;color:#e3d8cb;white-space:nowrap}
   nav button:hover{background:#3a312b} nav button.on{background:var(--wood);color:#fff}
-  .ico{width:18px;text-align:center}
+  .ico{width:26px;text-align:center;font-size:19px}  /* V101: bigger icons */
   main{padding:22px 30px;min-width:0;max-width:900px}
   header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}
   h1{font-size:22px;margin:0} h2{font-size:15px;margin:0 0 10px}
@@ -105,7 +105,7 @@ function call(fn){
 }
 function noLink(msg){ $("nav").innerHTML = ""; $("main").innerHTML = '<div class="card"><div class="big">Open your personal link</div><div class="note">' + esc(msg || "This page needs the link the office sent you.") + ' Ask the office for a new link if it does not work.</div>' +
   '<div class="actions"><button class="btn btn-s" onclick="location.search=\'?demo=1\'">Practise in training mode</button></div></div>'; }
-function areas(){ var a = []; S.ops.forEach(function(o){ if (a.indexOf(o.area) < 0) a.push(o.area); }); return a; }
+function areas(){ var a = []; S.ops.forEach(function(o){ if (a.indexOf(o.area) < 0 && o.area !== "Jobs") a.push(o.area); }); return a; }  // V101: the worker works only in the shop - no Jobs tab
 function go(v){ VIEW = v; render(); window.scrollTo(0, 0); }
 
 function render(){
@@ -303,6 +303,7 @@ function kitchenDetail(j, i){
   j.files.forEach(function(f, k){ (f.name.indexOf("/") >= 0 ? tech : main).push('<button class="btn btn-s" onclick="openFile(' + i + ',' + k + ')">' + esc(f.name.split("/").pop()) + '</button>'); if (f.local) local = f.local; });
   h += '<label class="note">Files</label><div class="actions" style="margin:6px 0 ' + (tech.length || local ? 6 : 12) + 'px">' + (main.length ? main.join("") : '<span class="note">No files yet - the office sends them from the cabinet program.</span>') + '</div>';
   if (local) h += '<div class="note" style="margin-bottom:6px">On the shop computer: <b>' + esc(local) + '</b> <button class="btn btn-s" onclick="copyLocal(' + i + ')">Copy</button></div>';
+  if (j.files.some(function(f){ return /\.dxf$/i.test(f.name) && f.name.indexOf("/") < 0; })) h += cutSteps(i);  // V101
   if (tech.length) h += '<details style="margin-bottom:12px"><summary class="note">Technical files (' + tech.length + ') - VCarve uses them by itself</summary><div class="actions" style="margin-top:6px">' + tech.join("") + '</div></details>';
   h += '<label class="note">Report</label><div class="actions" style="margin:6px 0 0">' + ["Sheets used", "Problem", "Note"].map(function(t){
     return '<button class="btn ' + (KREP === t ? "btn-p" : "btn-s") + '" onclick="KREP=KREP===\'' + t + '\'?\'\':\'' + t + '\';PHOTO=null;render()">' + t + '</button>'; }).join("") + '</div>';
@@ -312,6 +313,19 @@ function kitchenDetail(j, i){
     '<div class="actions"><button class="btn btn-g" onclick="sendReport(' + i + ')">Send</button></div></div>';
   return h + '</div>';
 }
+// V101: how to cut a kitchen - VCarve opens the DXF only through the AltMill gadget, never by double click
+function cutSteps(i){
+  var dxf = S.kitchens[i].files.filter(function(f){ return /\.dxf$/i.test(f.name) && f.name.indexOf("/") < 0; }).map(function(f){ return esc(f.name); });
+  return '<details style="margin:4px 0 12px;background:#fff;border-radius:8px;padding:8px 10px"' + (CUTOPEN ? " open" : "") + ' ontoggle="CUTOPEN=this.open"><summary style="cursor:pointer;font-weight:700">How to cut this kitchen on the CNC</summary><ol class="steps" style="margin:8px 0 0">' +
+    '<li>Press <b>Start: CNC cutting (kitchen)</b> below (clock in first).</li>' +
+    '<li>Press <b>Copy</b> next to "On the shop computer" - the folder of this kitchen.</li>' +
+    '<li>On the shop computer double-click <b>AltMill CAM</b> on the Desktop - VCarve opens. Do not open the DXF file itself.</li>' +
+    '<li>In VCarve: menu <b>Gadgets</b> → <b>AltMill_VCarve_Job</b> (the newest number). In the window that opens paste the folder (Ctrl+V), Enter, and choose <b>' + dxf.join("</b> or <b>") + '</b>' + (dxf.length > 1 ? " - one VCarve job per thickness" : "") + '.</li>' +
+    '<li>The gadget makes all the sheets. Check the edgebanding thickness, press <b>GENERATE ALL TOOLPATHS</b>.</li>' +
+    '<li>Cut the sheets in order (Sheet 1, 2…). The parts stay held by a thin skin; the last pass of each sheet frees them.</li>' +
+    '<li>When the machine stops: <b>Cut finished</b>, then Report → <b>Sheets used</b>. A problem? Report → Problem with a photo.</li></ol></details>';
+}
+var CUTOPEN = false;
 function copyLocal(i){ var f = S.kitchens[i].files.filter(function(x){ return x.local; })[0]; if (f) copyText(f.local); }
 function copyText(t){ (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ toast("Copied - paste it in File Explorer or VCarve"); }, function(){ toast(t); }); }  // V97
 function openFile(i, k){
@@ -552,11 +566,10 @@ function help(){
     '<div class="card"><h2>Kitchens</h2><ol class="steps">' +
     '<li><b>Choose the kitchen</b> on the Kitchens tab, then press the stage you do (Edge banding, Assembly…). Your hours go to that kitchen.</li>' +
     '<li><b>Files:</b> the shop drawing (PDF) and the main CNC file (DXF) are on its card; the rest is under Technical files. "On the shop computer" shows the folder with the original files.</li>' +
-    '<li><b>CNC:</b> press <b>Start: CNC cutting (kitchen)</b> when the machine starts a kitchen sheet; <b>Cut finished</b> when it stops.</li>' +
+    '<li><b>CNC:</b> open "How to cut this kitchen on the CNC" on its card and follow the steps: the DXF is opened only through the AltMill gadget in VCarve (the AltMill CAM icon on the Desktop opens VCarve).</li>' +
     '<li><b>Report:</b> how many sheets you used, a problem (with a photo) or a note - the office sees it the same day.</li></ol></div>' +
-    '<div class="card"><h2>Tasks and jobs</h2><ol class="steps">' +
-    '<li><b>Tasks tab:</b> what the office asks you to do, most important first. Start → tick the steps → Done. Stuck? <b>Waiting…</b> and write why.</li>' +
-    '<li><b>Jobs tab:</b> construction jobs - choose the job, then press what you do (Prep, Fabrication, Install…). Your hours go to that job.</li></ol></div>' +
+    '<div class="card"><h2>Tasks</h2><ol class="steps">' +  // V101: no Jobs tab
+    '<li><b>Tasks tab:</b> what the office asks you to do, most important first. Start → tick the steps → Done. Stuck? <b>Waiting…</b> and write why.</li></ol></div>' +
     '<div class="card"><h2>If you forgot</h2><ol class="steps">' +
     '<li><b>Forgot to Clock out:</b> the shift closes by itself in the evening and the office corrects the time.</li>' +
     '<li><b>Forgot to switch the job:</b> press the right operation as soon as you notice.</li>' +
