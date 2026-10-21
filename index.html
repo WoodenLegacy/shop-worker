@@ -318,9 +318,8 @@ function cutSteps(i){
   var dxf = S.kitchens[i].files.filter(function(f){ return /\.dxf$/i.test(f.name) && f.name.indexOf("/") < 0; }).map(function(f){ return esc(f.name); });
   return '<details style="margin:4px 0 12px;background:#fff;border-radius:8px;padding:8px 10px"' + (CUTOPEN ? " open" : "") + ' ontoggle="CUTOPEN=this.open"><summary style="cursor:pointer;font-weight:700">How to cut this kitchen on the CNC</summary><ol class="steps" style="margin:8px 0 0">' +
     '<li>Press <b>Start: CNC cutting (kitchen)</b> below (clock in first).</li>' +
-    '<li>Press <b>Copy</b> next to "On the shop computer" - the folder of this kitchen.</li>' +
-    '<li>On the shop computer double-click <b>AltMill CAM</b> on the Desktop - VCarve opens. Do not open the DXF file itself.</li>' +
-    '<li>In VCarve: menu <b>Gadgets</b> → <b>AltMill_VCarve_Job</b> (the newest number). In the window that opens paste the folder (Ctrl+V), Enter, and choose <b>' + dxf.join("</b> or <b>") + '</b>' + (dxf.length > 1 ? " - one VCarve job per thickness" : "") + '.</li>' +
+    '<li>On the shop computer open <b>VCarve Pro</b> (no project open). Do not double-click the DXF file itself.</li>' +  // V102: no copy, no shortcut
+    '<li>Menu <b>Gadgets</b> → <b>AltMill_VCarve_Job</b> (the newest number). The file of the newest kitchen is already selected - check it is <b>' + dxf.join("</b> or <b>") + '</b> and press <b>Open</b>' + (dxf.length > 1 ? " (one VCarve job per thickness: the next time the gadget offers the other one)" : "") + '. Another kitchen: Copy the folder above and paste it in that window.</li>' +
     '<li>The gadget makes all the sheets. Check the edgebanding thickness, press <b>GENERATE ALL TOOLPATHS</b>.</li>' +
     '<li>Cut the sheets in order (Sheet 1, 2…). The parts stay held by a thin skin; the last pass of each sheet frees them.</li>' +
     '<li>When the machine stops: <b>Cut finished</b>, then Report → <b>Sheets used</b>. A problem? Report → Problem with a photo.</li></ol></details>';
@@ -566,7 +565,7 @@ function help(){
     '<div class="card"><h2>Kitchens</h2><ol class="steps">' +
     '<li><b>Choose the kitchen</b> on the Kitchens tab, then press the stage you do (Edge banding, Assembly…). Your hours go to that kitchen.</li>' +
     '<li><b>Files:</b> the shop drawing (PDF) and the main CNC file (DXF) are on its card; the rest is under Technical files. "On the shop computer" shows the folder with the original files.</li>' +
-    '<li><b>CNC:</b> open "How to cut this kitchen on the CNC" on its card and follow the steps: the DXF is opened only through the AltMill gadget in VCarve (the AltMill CAM icon on the Desktop opens VCarve).</li>' +
+    '<li><b>CNC:</b> open "How to cut this kitchen on the CNC" on its card and follow the steps: in VCarve, Gadgets → AltMill_VCarve_Job - the newest kitchen is already selected, press Open.</li>' +
     '<li><b>Report:</b> how many sheets you used, a problem (with a photo) or a note - the office sees it the same day.</li></ol></div>' +
     '<div class="card"><h2>Tasks</h2><ol class="steps">' +  // V101: no Jobs tab
     '<li><b>Tasks tab:</b> what the office asks you to do, most important first. Start → tick the steps → Done. Stuck? <b>Waiting…</b> and write why.</li></ol></div>' +
