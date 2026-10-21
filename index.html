@@ -84,7 +84,8 @@ var ACTIONS = { wkState: ["state"], wkClockIn: ["clockIn"], wkClockOut: ["clockO
                 wkBatchStart: ["batchStart", "out"], wkBatchTake: ["batchTake", "id", "item", "qty"],
                 wkBatchFinish: ["batchFinish", "id", "qty", "def", "leftItem", "leftQty"], wkCount: ["count", "c"],
                 wkFile: ["file", "id"], wkReport: ["report", "job", "type", "qty", "note", "photo"],  // V93
-                wkTaskStart: ["taskStart", "id"], wkTaskCheck: ["taskCheck", "id", "n", "on"], wkTaskWait: ["taskWait", "id", "why"], wkTaskDone: ["taskDone", "id"] };  // V94
+                wkTaskStart: ["taskStart", "id"], wkTaskCheck: ["taskCheck", "id", "n", "on"], wkTaskWait: ["taskWait", "id", "why"], wkTaskDone: ["taskDone", "id"],  // V94
+                wkForgot: ["forgot", "job", "item", "qty", "note"] };  // V98
 function api(fn, args){
   if (DEMO) return new Promise(function(ok){ ok(sim(fn, args)); });  // V94: training mirror - nothing is sent
   var a = ACTIONS[fn], q = "?api=" + a[0] + "&t=" + encodeURIComponent(TOKEN);
@@ -147,7 +148,22 @@ function myDay(){
   if (S.shift && !S.running) h += '<div class="card"><h2>What are you doing now?</h2><div class="ops">' + areas().map(function(a){ return '<button class="btn" onclick="go(TABS[' + TABS.indexOf(a) + '])">' + (ICONS[a] || "•") + ' ' + esc(a) + '</button>'; }).join("") + '</div></div>';
   h += '<div class="card"><h2>Today</h2>' + (S.today.length ? S.today.map(function(t){
     return '<div class="row"><div>' + esc(t.op) + ' <span class="note">· ' + esc(t.area) + (t.kind === "machine" ? " · machine" : "") + '</span></div><div class="note">' + esc(t.from) + '–' + esc(t.to || "now") + ' · ' + hm(t.minutes) + '</div></div>'; }).join("") : '<div class="empty">Nothing yet today.</div>') + '</div>';
+  h += forgotCard();  // V98
   return h;
+}
+// ---------- V98: "Forgot to buy" - goes to the office's Purchasing list
+var FORGOT = false;
+function forgotCard(){
+  if (!FORGOT) return '<div class="card"><div class="row" style="padding:0"><div><b>Something is missing?</b><div class="note">Material or supplies the office forgot to buy</div></div><button class="btn btn-s" onclick="FORGOT=true;render()">Forgot to buy</button></div></div>';
+  return '<div class="card"><h2>Forgot to buy</h2><label class="note">What</label><input id="fgItem" placeholder="e.g. 3/4 maple plywood, wood glue" style="width:100%;padding:10px;margin:6px 0 10px">' +
+    '<label class="note">How many</label><input id="fgQty" type="number" min="1" step="any" value="1" style="max-width:110px;padding:10px;margin:6px 0 10px;display:block">' +
+    '<label class="note">For which job</label><select id="fgJob" style="width:100%;padding:10px;margin:6px 0 10px"><option value="">Shop (no job)</option>' +
+    (S.kitchens || []).map(function(j){ return '<option value="' + esc(j.key) + '">' + esc(j.name) + '</option>'; }).join("") + '</select>' +
+    '<input id="fgNote" placeholder="Note (optional)" style="width:100%;padding:10px;margin-bottom:8px">' +
+    '<div class="actions"><button class="btn btn-g" onclick="sendForgot()">Send to the office</button><button class="btn btn-s" onclick="FORGOT=false;render()">Cancel</button></div></div>';
+}
+function sendForgot(){
+  call("wkForgot", $("fgJob").value, $("fgItem").value, $("fgQty").value, $("fgNote").value).then(function(){ FORGOT = false; render(); toast("Sent - the office will buy it"); });
 }
 // ---------- V92: CNC maps - maps and batches on the tabs
 var SELM = {}, SELB = "", FIN = "", PHOTO = null;
@@ -325,7 +341,8 @@ var TIPS = {
     "The green card is what you are doing now: <b>Pause</b> (drying, a break) or <b>Done</b>.",
     "<b>Paused / drying</b>: jobs that wait for you. Press <b>Continue</b> or <b>Done</b>.",
     "<b>What are you doing now?</b> opens the place in the shop where you start the next job.",
-    "<b>Today</b>: everything you did today, with the time."]],
+    "<b>Today</b>: everything you did today, with the time.",
+    "<b>Forgot to buy</b>: something is missing for a job (or the shop). Write what and how many - it goes on the office's shopping list."]],
   "Tasks": ["Tasks", ["Tasks from the office, the most important first. <b>Overdue</b> means the date has passed.",
     "<b>Start</b> when you begin a task - its time is counted like any job. Tick the steps as you do them.",
     "<b>Waiting…</b> when you cannot go on (no material, a question): write why - the office gets it.",
@@ -465,6 +482,7 @@ function sim(fn, a){
       c.batches = c.batches.filter(function(x){ return x !== f; }); simClose(function(g){ return hand(g) && g.items === "batch:" + a[0]; }, "done");
       break;
     case "wkCount": String(a[0] || "").split(";").forEach(function(s){ var q = s.split("|"); c.stock.forEach(function(x){ if (x.item === q[0]) { x.stock = Number(q[1]); x.low = x.stock < x.min; } }); }); break;
+    case "wkForgot": if (!String(a[1]).trim()) throw new Error("Write what is missing."); break;  // V98
     case "wkReport":
       if (a[1] === "Sheets used" && !(Number(a[2]) > 0)) throw new Error("Enter how many sheets.");
       if (a[1] !== "Sheets used" && !String(a[3]).trim()) throw new Error("Write what happened.");
@@ -519,7 +537,8 @@ function help(){
     '<li><b>Next job:</b> just press the next operation. The previous one is finished automatically.</li>' +
     '<li><b>CNC:</b> press <b>Start: CNC cutting</b> when the machine starts. Do hand work meanwhile. Press <b>Cut finished</b> when it stops.</li>' +
     '<li><b>Glue or finish drying:</b> press <b>Pause</b>. Later press <b>Continue</b> in Paused / drying, or <b>Done</b> if nothing is left to do.</li>' +
-    '<li><b>End of the day:</b> My day → <b>Clock out</b>. A job you were doing is paused and waits for you tomorrow.</li></ol></div>' +
+    '<li><b>End of the day:</b> My day → <b>Clock out</b>. A job you were doing is paused and waits for you tomorrow.</li>' +
+    '<li><b>Something is missing:</b> My day → <b>Forgot to buy</b>. The office gets a message and puts it on the shopping list.</li></ol></div>' +
     '<div class="card"><h2>Maps</h2><ol class="steps">' +
     '<li><b>New map:</b> CNC tab → Start a new map (an order first, or a size for stock). Write the number (#014) on the blank.</li>' +
     '<li><b>Work on maps:</b> tick the map(s) in Maps in progress, then press the operation. Several maps at once are fine.</li>' +
