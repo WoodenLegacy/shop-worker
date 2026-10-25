@@ -142,6 +142,7 @@ function myDay(){
   var tl = S.tasks || [], to = tl.filter(function(t){ return t.overdue; }).length;  // V94: tasks waiting for the worker
   if (tl.length) h += '<div class="card"><div class="row" style="padding:0"><div><b>' + tl.length + ' task' + (tl.length > 1 ? "s" : "") + ' for you</b>' + (to ? ' <span class="chip c-red">' + to + ' overdue</span>' : "") +
     '<div class="note">' + esc(tl[0].title) + (tl.length > 1 ? " and more" : "") + '</div></div><button class="btn btn-s" onclick="go(\'Tasks\')">Open</button></div></div>';
+  h += weekCard();  // V105: This week
   if (S.paused.length) h += '<div class="card"><h2>Paused / drying</h2>' + S.paused.map(function(p){
     return '<div class="row"><div><b>' + esc(p.op) + '</b> <span class="chip c-amber">' + esc(p.area) + '</span><div class="note">' + hm(p.minutes) + ' of work · paused ' + esc(p.since) + '</div></div>' +
       '<div class="actions" style="margin:0"><button class="btn btn-s"' + (S.shift ? "" : " disabled") + ' onclick="call(\'wkContinue\',\'' + p.opId + '\')">Continue</button><button class="btn btn-g" onclick="call(\'wkDone\',\'' + p.opId + '\')">Done</button></div></div>'; }).join("") + '</div>';
@@ -150,6 +151,17 @@ function myDay(){
     return '<div class="row"><div>' + esc(t.op) + ' <span class="note">· ' + esc(t.area) + (t.kind === "machine" ? " · machine" : "") + '</span></div><div class="note">' + esc(t.from) + '–' + esc(t.to || "now") + ' · ' + hm(t.minutes) + '</div></div>'; }).join("") : '<div class="empty">Nothing yet today.</div>') + '</div>';
   h += forgotCard();  // V98
   return h;
+}
+// ---------- V105: This week - the jobs on the shop's calendar, my tasks and the CNC orders due this week
+function wDay(d){ var a = String(d).split("-"); return new Date(+a[0], +a[1] - 1, +a[2]).toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" }); }
+function weekCard(){
+  var w = S.week; if (!w) return "";
+  var rows = w.jobs.map(function(j){
+    return '<div class="row"><div><b>' + esc(j.name) + '</b> <span class="chip c-wood">' + esc(j.stage) + '</span><div class="note">' + wDay(j.start) + ' → ' + wDay(j.end) + '</div></div>' +
+      (j.late ? '<span class="chip c-red">late</span>' : j.dueNow ? '<span class="chip c-amber">due ' + wDay(j.end) + '</span>' : j.startsNow ? '<span class="chip c-green">starts ' + wDay(j.start) + '</span>' : '<span class="chip c-grey">in work</span>') + '</div>'; })
+    .concat(w.tasks.map(function(t){ return '<div class="row"><div>☑ ' + esc(t.title) + '</div><span class="chip ' + (t.late ? "c-red" : "c-amber") + '">' + (t.late ? "overdue " : "due ") + wDay(t.due) + '</span></div>'; }))
+    .concat(w.orders.map(function(o){ return '<div class="row"><div>◈ CNC map ' + esc(o.tier) + (o.design ? " · " + esc(o.design) : "") + '</div><span class="chip ' + (o.late ? "c-red" : "c-green") + '">' + (o.late ? "overdue " : "due ") + wDay(o.due) + '</span></div>'; }));
+  return '<div class="card"><h2>This week <span class="note">' + wDay(w.from) + ' – ' + wDay(w.to) + '</span></h2>' + (rows.length ? rows.join("") : '<div class="empty">Nothing planned on the calendar this week.</div>') + '</div>';
 }
 // ---------- V98: "Forgot to buy" - goes to the office's Purchasing list
 var FORGOT = false;
@@ -353,6 +365,7 @@ var TIPS = {
   "My day": ["My day", ["<b>Clock in</b> when you start work, <b>Clock out</b> when you leave. Your hours go to FreshBooks by themselves.",
     "The green card is what you are doing now: <b>Pause</b> (drying, a break) or <b>Done</b>.",
     "<b>Paused / drying</b>: jobs that wait for you. Press <b>Continue</b> or <b>Done</b>.",
+    "<b>This week</b>: the jobs on the shop's calendar (start → deadline), your tasks and the CNC orders due this week.",  // V105
     "<b>What are you doing now?</b> opens the place in the shop where you start the next job.",
     "<b>Today</b>: everything you did today, with the time.",
     "<b>Forgot to buy</b>: something is missing for a job (or the shop). Write what and how many - it goes on the office's shopping list."]],
