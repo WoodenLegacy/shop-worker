@@ -157,11 +157,24 @@ function wDay(d){ var a = String(d).split("-"); return new Date(+a[0], +a[1] - 1
 function weekCard(){
   var w = S.week; if (!w) return "";
   var rows = w.jobs.map(function(j){
-    return '<div class="row"><div><b>' + esc(j.name) + '</b> <span class="chip c-wood">' + esc(j.stage) + '</span><div class="note">' + wDay(j.start) + ' → ' + wDay(j.end) + '</div></div>' +
+    return '<div class="row" style="cursor:pointer" onclick="weekGo(\'job\',\'' + esc(j.key || "") + '\')"><div><b>' + esc(j.name) + '</b> <span class="chip c-wood">' + esc(j.stage) + '</span><div class="note">' + wDay(j.start) + ' → ' + wDay(j.end) + '</div></div>' +
       (j.late ? '<span class="chip c-red">late</span>' : j.dueNow ? '<span class="chip c-amber">due ' + wDay(j.end) + '</span>' : j.startsNow ? '<span class="chip c-green">starts ' + wDay(j.start) + '</span>' : '<span class="chip c-grey">in work</span>') + '</div>'; })
-    .concat(w.tasks.map(function(t){ return '<div class="row"><div>☑ ' + esc(t.title) + '</div><span class="chip ' + (t.late ? "c-red" : "c-amber") + '">' + (t.late ? "overdue " : "due ") + wDay(t.due) + '</span></div>'; }))
-    .concat(w.orders.map(function(o){ return '<div class="row"><div>◈ CNC map ' + esc(o.tier) + (o.design ? " · " + esc(o.design) : "") + '</div><span class="chip ' + (o.late ? "c-red" : "c-green") + '">' + (o.late ? "overdue " : "due ") + wDay(o.due) + '</span></div>'; }));
+    .concat(w.tasks.map(function(t){ return '<div class="row" style="cursor:pointer" onclick="weekGo(\'task\',\'\')"><div>☑ ' + esc(t.title) + '</div><span class="chip ' + (t.late ? "c-red" : "c-amber") + '">' + (t.late ? "overdue " : "due ") + wDay(t.due) + '</span></div>'; }))
+    .concat(w.orders.map(function(o){ return '<div class="row" style="cursor:pointer" onclick="weekGo(\'cnc\',\'\')"><div>◈ CNC map ' + esc(o.tier) + (o.design ? " · " + esc(o.design) : "") + '</div><span class="chip ' + (o.late ? "c-red" : "c-green") + '">' + (o.late ? "overdue " : "due ") + wDay(o.due) + '</span></div>'; }));
   return '<div class="card"><h2>This week <span class="note">' + wDay(w.from) + ' – ' + wDay(w.to) + '</span></h2>' + (rows.length ? rows.join("") : '<div class="empty">Nothing planned on the calendar this week.</div>') + '</div>';
+}
+// V109: a line of This week opens the tab where it is worked on (a job: its kitchen / job card opened there)
+function weekGo(kind, key){
+  if (kind === "task") return go("Tasks");
+  var tabs = areas().filter(function(a){
+    var L = opLinks(S.ops.filter(function(o){ return o.area === a; }));
+    if (kind === "cnc") return L.map || L.any;
+    var j = (S.kitchens || []).filter(function(x){ return x.key === key; })[0];
+    return L.job && j && (a === "Kitchens") === ((j.kind || "Kitchen") === "Kitchen");
+  });
+  if (!tabs.length) return toast(kind === "cnc" ? "No CNC tab in your list." : "This job is not in your list yet - the office has not sent its files.", true);
+  if (kind === "job") { SELK = key; KREP = ""; }
+  go(tabs[0]);
 }
 // ---------- V98: "Forgot to buy" - goes to the office's Purchasing list
 var FORGOT = false;
@@ -365,7 +378,7 @@ var TIPS = {
   "My day": ["My day", ["<b>Clock in</b> when you start work, <b>Clock out</b> when you leave. Your hours go to FreshBooks by themselves.",
     "The green card is what you are doing now: <b>Pause</b> (drying, a break) or <b>Done</b>.",
     "<b>Paused / drying</b>: jobs that wait for you. Press <b>Continue</b> or <b>Done</b>.",
-    "<b>This week</b>: the jobs on the shop's calendar (start → deadline), your tasks and the CNC orders due this week.",  // V105
+    "<b>This week</b>: the jobs on the shop's calendar (start → deadline), your tasks and the CNC orders due this week. Tap a line to open it.",  // V105
     "<b>What are you doing now?</b> opens the place in the shop where you start the next job.",
     "<b>Today</b>: everything you did today, with the time.",
     "<b>Forgot to buy</b>: something is missing for a job (or the shop). Write what and how many - it goes on the office's shopping list."]],
