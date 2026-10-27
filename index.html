@@ -85,7 +85,7 @@ var ACTIONS = { wkState: ["state"], wkClockIn: ["clockIn"], wkClockOut: ["clockO
                 wkBatchFinish: ["batchFinish", "id", "qty", "def", "leftItem", "leftQty"], wkCount: ["count", "c"],
                 wkFile: ["file", "id"], wkReport: ["report", "job", "type", "qty", "note", "photo"],  // V93
                 wkTaskStart: ["taskStart", "id"], wkTaskCheck: ["taskCheck", "id", "n", "on"], wkTaskWait: ["taskWait", "id", "why"], wkTaskDone: ["taskDone", "id"],  // V94
-                wkForgot: ["forgot", "job", "item", "qty", "note"] };  // V98
+                wkForgot: ["forgot", "job", "item", "qty", "note"], wkCheckIn: ["checkIn", "time", "note"] };  // V98; V110: check-in
 function api(fn, args){
   if (DEMO) return new Promise(function(ok){ ok(sim(fn, args)); });  // V94: training mirror - nothing is sent
   var a = ACTIONS[fn], q = "?api=" + a[0] + "&t=" + encodeURIComponent(TOKEN);
@@ -114,11 +114,21 @@ function render(){
   if (tabs.indexOf(VIEW) < 0) VIEW = "My day";
   $("nav").innerHTML = tabs.map(function(t, i){ return '<button class="' + (t === VIEW ? "on" : "") + '" onclick="go(TABS[' + i + '])"><span class="ico">' + (ICONS[t] || "•") + '</span>' + esc(t) + '</button>'; }).join("");
   $("main").innerHTML = VIEW === "My day" ? myDay() : VIEW === "Help" ? help() : VIEW === "Stock check" ? stockCheck() : VIEW === "Tasks" ? tasksView() : area(VIEW);
+  if (VIEW !== "Help") $("main").insertAdjacentHTML("afterbegin", checkinCard());  // V110: on every tab, at the top
   var hd = $("main").querySelector("header");  // V94: "?" on every screen
   if (hd && VIEW !== "Help") hd.insertAdjacentHTML("beforeend", '<button class="btn btn-s" id="qbtn" style="padding:8px 15px" title="Help for this screen" onclick="tip()">?</button>');
   if (TI >= 0) tourMark();
 }
 
+// V110: working alone - the check-in card (red when due) and the next time
+function checkinCard(){
+  var c = S.checkin; if (!c) return "";
+  if (!c.due) return VIEW === "My day" && c.next ? '<div class="note" style="margin:0 0 10px">You work alone today: next check-in at <b>' + esc(c.next) + '</b>. ' + esc(c.rules) + '</div>' : "";
+  return '<div class="card" style="border:2px solid var(--red);background:var(--red-soft)"><div class="big">Check-in ' + esc(c.due.time) + '</div>' +
+    '<div class="note">You work alone today. Press the button so the office knows you are OK' + (c.due.late >= 10 ? ' - the owner on duty is told at 15 min' : '') + '. ' + esc(c.rules) + '</div>' +
+    '<input id="ciNote" placeholder="Note (optional)" style="width:100%;padding:10px;margin:8px 0 0"><div class="actions"><button class="btn btn-g" style="font-size:18px;padding:14px 22px" onclick="checkIn()">I\'m OK</button></div></div>';
+}
+function checkIn(){ var c = S.checkin; call("wkCheckIn", c.due.time, $("ciNote") ? $("ciNote").value : "").then(function(){ toast("Check-in sent - thank you"); }); }
 function runningCard(){
   if (!S.running) return "";
   var r = S.running;
@@ -330,11 +340,13 @@ function kitchenDetail(j, i){
   if (local) h += '<div class="note" style="margin-bottom:6px">On the shop computer: <b>' + esc(local) + '</b> <button class="btn btn-s" onclick="copyLocal(' + i + ')">Copy</button></div>';
   if (j.files.some(function(f){ return /\.dxf$/i.test(f.name) && f.name.indexOf("/") < 0; })) h += cutSteps(i);  // V101
   if (tech.length) h += '<details style="margin-bottom:12px"><summary class="note">Technical files (' + tech.length + ') - VCarve uses them by itself</summary><div class="actions" style="margin-top:6px">' + tech.join("") + '</div></details>';
+  if ((j.kind || "Kitchen") === "Kitchen") h += cutBlock(j, i);  // V110: start / finish the cut on the kitchen's own card
   h += '<label class="note">Report</label><div class="actions" style="margin:6px 0 0">' + ["Sheets used", "Problem", "Note"].map(function(t){
     return '<button class="btn ' + (KREP === t ? "btn-p" : "btn-s") + '" onclick="KREP=KREP===\'' + t + '\'?\'\':\'' + t + '\';PHOTO=null;render()">' + t + '</button>'; }).join("") + '</div>';
-  if (KREP) h += '<div style="margin-top:10px">' + (KREP === "Sheets used" ? '<input id="krQty" type="number" step="1" placeholder="Sheets" style="max-width:110px;padding:10px;margin-bottom:8px">' : "") +
-    '<input id="krNote" placeholder="' + (KREP === "Sheets used" ? "Note (optional)" : "What happened") + '" style="width:100%;padding:10px;margin-bottom:8px">' +
-    (KREP === "Sheets used" ? "" : '<label class="note">Photo (optional)</label><input type="file" accept="image/*" capture="environment" onchange="pickPhoto(this)" style="margin:6px 0 10px">') +
+  var krs = KREP === "Sheets used" || KREP === "Cutting done";  // V110: All sheets cut asks the sheets of the whole kitchen
+  if (KREP) h += '<div style="margin-top:10px">' + (KREP === "Cutting done" ? '<label class="note">All sheets cut - how many sheets did the whole kitchen use?</label>' : "") + (krs ? '<input id="krQty" type="number" step="1" placeholder="Sheets" style="max-width:110px;padding:10px;margin-bottom:8px">' : "") +
+    '<input id="krNote" placeholder="' + (krs ? "Note (optional)" : "What happened") + '" style="width:100%;padding:10px;margin-bottom:8px">' +
+    (krs ? "" : '<label class="note">Photo (optional)</label><input type="file" accept="image/*" capture="environment" onchange="pickPhoto(this)" style="margin:6px 0 10px">') +
     '<div class="actions"><button class="btn btn-g" onclick="sendReport(' + i + ')">Send</button></div></div>';
   return h + '</div>';
 }
@@ -342,14 +354,30 @@ function kitchenDetail(j, i){
 function cutSteps(i){
   var dxf = S.kitchens[i].files.filter(function(f){ return /\.dxf$/i.test(f.name) && f.name.indexOf("/") < 0; }).map(function(f){ return esc(f.name); });
   return '<details style="margin:4px 0 12px;background:#fff;border-radius:8px;padding:8px 10px"' + (CUTOPEN ? " open" : "") + ' ontoggle="CUTOPEN=this.open"><summary style="cursor:pointer;font-weight:700">How to cut this kitchen on the CNC</summary><ol class="steps" style="margin:8px 0 0">' +
-    '<li>Press <b>Start: CNC cutting (kitchen)</b> below (clock in first).</li>' +
-    '<li>On the shop computer open <b>VCarve Pro</b> (no project open). Do not double-click the DXF file itself.</li>' +  // V102: no copy, no shortcut
-    '<li>Menu <b>Gadgets</b> → <b>AltMill_VCarve_Job</b> (the newest number). The file of the newest kitchen is already selected - check it is <b>' + dxf.join("</b> or <b>") + '</b> and press <b>Open</b>' + (dxf.length > 1 ? " (one VCarve job per thickness: the next time the gadget offers the other one)" : "") + '. Another kitchen: Copy the folder above and paste it in that window.</li>' +
-    '<li>The gadget makes all the sheets. Check the edgebanding thickness, press <b>GENERATE ALL TOOLPATHS</b>.</li>' +
-    '<li>Cut the sheets in order (Sheet 1, 2…). The parts stay held by a thin skin; the last pass of each sheet frees them.</li>' +
-    '<li>When the machine stops: <b>Cut finished</b>, then Report → <b>Sheets used</b>. A problem? Report → Problem with a photo.</li></ol></details>';
+    '<li>Press <b>▶ Start cutting this kitchen</b> on this card (clock in first).</li>' +  // V110: the button is on the card now
+    '<li>On the shop computer open <b>VCarve Pro</b> (no project open). Do not double-click the DXF file itself.' + pic(1) + '</li>' +  // V102: no copy, no shortcut; V110: pictures
+    '<li>Menu <b>Gadgets</b> → <b>AltMill_VCarve_Job</b> (the newest number). The file of the newest kitchen is already selected - check it is <b>' + dxf.join("</b> or <b>") + '</b> and press <b>Open</b>' + (dxf.length > 1 ? " (one VCarve job per thickness: the next time the gadget offers the other one)" : "") + '. Another kitchen: Copy the folder above and paste it in that window.' + pic(2) + pic(3) + '</li>' +
+    '<li>The gadget makes all the sheets. Check the edgebanding thickness, press <b>GENERATE ALL TOOLPATHS</b>. Wait for <b>ALL SHEETS CAM is ready</b>, press OK.' + pic(4) + pic(5) + '</li>' +
+    '<li>Cut the sheets in order (Sheet 1, 2…). The parts stay held by a thin skin; the last pass of each sheet frees them.' + pic(6) + '</li>' +
+    '<li>A break or the end of the day: <b>Cut finished</b>. When every sheet is cut: <b>All sheets cut</b> → how many sheets → Send. A problem? Report → Problem with a photo.</li></ol></details>';  // V110
 }
 var CUTOPEN = false;
+// V110: a screenshot under a step (img/ in the shop-worker repo), opened on demand so the phone does not load them all
+var PICS = { 1: "VCarve with no project open", 2: "Gadgets menu - AltMill_VCarve_Job", 3: "The kitchen file is already selected - Open", 4: "The gadget panel - edgebanding, GENERATE ALL TOOLPATHS", 5: "ALL SHEETS CAM is ready - OK", 6: "The sheets and their toolpaths" };
+function pic(n){ return '<details style="margin-top:4px"><summary class="note" style="cursor:pointer">Show picture</summary><img src="img/cnc-' + n + '.jpg" alt="' + esc(PICS[n]) + '" loading="lazy" style="width:100%;border-radius:6px;margin-top:6px;border:1px solid var(--line)"></details>'; }
+// V110: cut this kitchen from its own card - start, Cut finished, All sheets cut (the office then picks the next step)
+function cutOp(){ for (var k = 0; k < S.ops.length; k++) if (S.ops[k].kind === "machine" && S.ops[k].links === "job" && S.ops[k].area === "Kitchens") return k; return -1; }
+function cutBlock(j, i){
+  var on = S.machine.filter(function(m){ return m.items === "job:" + j.key; })[0], op = cutOp();
+  var h = '<label class="note">CNC cutting</label><div class="actions" style="margin:6px 0 12px">';
+  if (j.cutDone) return h + '<span class="chip c-green">✓ All sheets cut · ' + esc(j.cutDone) + '</span></div>';
+  if (on) h += '<span class="note">Cutting now · ' + hm(on.minutes) + '</span><button class="btn btn-p" onclick="call(\'wkMachineStop\',\'' + on.opId + '\')">Cut finished</button>';
+  else if (op >= 0) h += '<button class="btn btn-s"' + (S.shift && !S.machine.length ? "" : " disabled") + ' onclick="SELK=S.kitchens[' + i + '].key;start(' + op + ')">▶ Start cutting this kitchen</button>';
+  h += '<button class="btn ' + (KREP === "Cutting done" ? "btn-p" : "btn-g") + '" onclick="KREP=KREP===\'Cutting done\'?\'\':\'Cutting done\';PHOTO=null;render()">All sheets cut</button></div>';
+  if (!S.shift) h += '<div class="note" style="margin:-6px 0 10px">Clock in first (My day).</div>';
+  else if (!on && S.machine.length) h += '<div class="note" style="margin:-6px 0 10px">The CNC is cutting something else - press Cut finished on it first.</div>';
+  return h;
+}
 function copyLocal(i){ var f = S.kitchens[i].files.filter(function(x){ return x.local; })[0]; if (f) copyText(f.local); }
 function copyText(t){ (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ toast("Copied - paste it in File Explorer or VCarve"); }, function(){ toast(t); }); }  // V97
 function openFile(i, k){
@@ -476,7 +504,8 @@ function simState(){
   SIM.tasks.forEach(function(t){ t.minutes = 0; SIM.segs.forEach(function(g){ if (g.items === "task:" + t.id) t.minutes += simMin(g.start, g.end); }); });
   return JSON.parse(JSON.stringify({ name: "Trainee", shift: SIM.shift ? { since: simFmt(SIM.shift), minutes: simMin(SIM.shift) } : null, running: running,
     machine: machine, paused: paused, today: today, ops: SIM.ops, cnc: SIM.cnc, kitchens: SIM.kitchens,
-    tasks: SIM.tasks.filter(function(t){ return t.status !== "Done"; }) }));
+    tasks: SIM.tasks.filter(function(t){ return t.status !== "Done"; }),
+    checkin: SIM.shift && !(SIM.ci || {})["10:00"] ? { due: { time: "10:00", late: 3 }, next: "14:00", rules: "Not alone: lifting full sheets, spraying solvent finishes without ventilation." } : SIM.shift ? { due: null, next: "14:00", rules: "Not alone: lifting full sheets, spraying solvent finishes without ventilation." } : null }));  // V110: a check-in to practise
 }
 function simClose(test, reason){ SIM.segs.forEach(function(g){ if (!g.end && test(g)) { g.end = Date.now(); g.reason = reason; } }); }
 function simStock(item, q){ SIM.cnc.stock.forEach(function(s){ if (s.item === item) { s.stock = Math.round((s.stock + q) * 100) / 100; s.low = s.stock < s.min; } }); }
@@ -522,9 +551,12 @@ function sim(fn, a){
       break;
     case "wkCount": String(a[0] || "").split(";").forEach(function(s){ var q = s.split("|"); c.stock.forEach(function(x){ if (x.item === q[0]) { x.stock = Number(q[1]); x.low = x.stock < x.min; } }); }); break;
     case "wkForgot": if (!String(a[1]).trim()) throw new Error("Write what is missing."); break;  // V98
+    case "wkCheckIn": SIM.ci = (SIM.ci || {}); SIM.ci[a[0]] = true; break;  // V110
     case "wkReport":
-      if (a[1] === "Sheets used" && !(Number(a[2]) > 0)) throw new Error("Enter how many sheets.");
-      if (a[1] !== "Sheets used" && !String(a[3]).trim()) throw new Error("Write what happened.");
+      var krs = a[1] === "Sheets used" || a[1] === "Cutting done";  // V110
+      if (krs && !(Number(a[2]) > 0)) throw new Error("Enter how many sheets.");
+      if (!krs && !String(a[3]).trim()) throw new Error("Write what happened.");
+      if (a[1] === "Cutting done") { simClose(function(g){ return g.kind === "machine" && g.items === "job:" + a[0]; }, "done"); SIM.kitchens.forEach(function(j){ if (j.key === a[0]) j.cutDone = simFmt(Date.now()) + " · " + a[2] + " sheets"; }); }
       break;
     case "wkFile": throw new Error("Training mode: files do not open here. At work this button opens the drawing.");
     case "wkTaskStart":
@@ -572,6 +604,7 @@ function help(){
     '</div><div class="note" style="margin-top:8px">Training mode is this same page with made-up maps and a sample kitchen. Press anything: nothing reaches the shop or FreshBooks. Press <b>?</b> on any screen for help with that screen.</div></div>' +
     '<div class="card"><h2>Every day</h2><ol class="steps">' +
     '<li><b>Start of the day:</b> My day → <b>Clock in</b>.</li>' +
+    '<li><b>Alone in the shop:</b> at the check-in times a red card shows on top - press <b>I\'m OK</b>. No answer in 15 minutes: the owner calls you; 30 minutes: someone comes to the shop.</li>' +  // V110
     '<li><b>Start a job:</b> open the tab (Batches, CNC, Hand work…) → press the operation. A green card shows what you are doing now.</li>' +
     '<li><b>Next job:</b> just press the next operation. The previous one is finished automatically.</li>' +
     '<li><b>CNC:</b> press <b>Start: CNC cutting</b> when the machine starts. Do hand work meanwhile. Press <b>Cut finished</b> when it stops.</li>' +
@@ -592,6 +625,7 @@ function help(){
     '<li><b>Choose the kitchen</b> on the Kitchens tab, then press the stage you do (Edge banding, Assembly…). Your hours go to that kitchen.</li>' +
     '<li><b>Files:</b> the shop drawing (PDF) and the main CNC file (DXF) are on its card; the rest is under Technical files. "On the shop computer" shows the folder with the original files.</li>' +
     '<li><b>CNC:</b> open "How to cut this kitchen on the CNC" on its card and follow the steps: in VCarve, Gadgets → AltMill_VCarve_Job - the newest kitchen is already selected, press Open.</li>' +
+    '<li><b>Cutting:</b> on the kitchen card <b>▶ Start cutting this kitchen</b>, <b>Cut finished</b> when the machine stops, <b>All sheets cut</b> when the whole kitchen is cut (with the number of sheets).</li>' +  // V110
     '<li><b>Report:</b> how many sheets you used, a problem (with a photo) or a note - the office sees it the same day.</li></ol></div>' +
     '<div class="card"><h2>Tasks</h2><ol class="steps">' +  // V101: no Jobs tab
     '<li><b>Tasks tab:</b> what the office asks you to do, most important first. Start → tick the steps → Done. Stuck? <b>Waiting…</b> and write why.</li></ol></div>' +
@@ -626,7 +660,10 @@ function newTasks(s){
   if (KNOWN) list.forEach(function(t){ if (KNOWN.indexOf(t.id) < 0) pop("New task from the office: " + t.title, "Tasks"); });
   KNOWN = list.map(function(t){ return t.id; });
 }
-setInterval(function(){ n++; tick(); if (n % 4 === 0) api("wkState", []).then(function(s){ newTasks(s); if (VIEW === "My day" || (VIEW === "Tasks" && !TWAIT)) { S = s; render(); } }, function(){}); }, 30000);
+setInterval(function(){ n++; tick(); if (n % 4 === 0) api("wkState", []).then(function(s){ newTasks(s); if (VIEW === "My day" || (VIEW === "Tasks" && !TWAIT) || ciNew(s)) { S = s; render(); } }, function(){}); }, 30000);
+// V110: a check-in that just became due shows on any tab (and the phone buzzes); opening the page again asks at once
+function ciNew(s){ var on = !!(s.checkin && s.checkin.due) && !(S && S.checkin && S.checkin.due); if (on && navigator.vibrate) try { navigator.vibrate([300, 150, 300]); } catch (e) {} return on; }
+document.addEventListener("visibilitychange", function(){ if (!document.hidden && !DEMO && TOKEN) api("wkState", []).then(function(s){ if (ciNew(s) || VIEW === "My day") { S = s; render(); } }, function(){}); });
 if (DEMO) { simInit(); call("wkState").then(function(s){ newTasks(s); tourFirst(); }); }  // V94: training mirror
 else if (TOKEN) call("wkState").then(function(s){ newTasks(s); tourFirst(); }, function(){}); else noLink();  // V95: remember the tasks for pop-ups
 </script>
