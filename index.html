@@ -362,9 +362,11 @@ function cutSteps(i){
     '<li>A break or the end of the day: <b>Cut finished</b>. When every sheet is cut: <b>All sheets cut</b> → how many sheets → Send. A problem? Report → Problem with a photo.</li></ol></details>';  // V110
 }
 var CUTOPEN = false;
+// V111: Help → the sample kitchen in training mode with the CNC steps open
+function cncDemo(){ VIEW = "Kitchens"; SELK = "DEMO-K1"; CUTOPEN = true; render(); var d = $("main").querySelector("details[ontoggle]"); if (d) window.scrollTo(0, d.getBoundingClientRect().top + window.scrollY - 130); }  // below the phone's tab bar
 // V110: a screenshot under a step (img/ in the shop-worker repo), opened on demand so the phone does not load them all
 var PICS = { 1: "VCarve with no project open", 2: "Gadgets menu - AltMill_VCarve_Job", 3: "The kitchen file is already selected - Open", 4: "The gadget panel - edgebanding, GENERATE ALL TOOLPATHS", 5: "ALL SHEETS CAM is ready - OK", 6: "The sheets and their toolpaths" };
-function pic(n){ return '<details style="margin-top:4px"><summary class="note" style="cursor:pointer">Show picture</summary><img src="img/cnc-' + n + '.jpg" alt="' + esc(PICS[n]) + '" loading="lazy" style="width:100%;border-radius:6px;margin-top:6px;border:1px solid var(--line)"></details>'; }
+function pic(n){ return '<details style="margin-top:6px"><summary style="cursor:pointer;display:inline-block;padding:7px 14px;border-radius:8px;background:var(--wood-soft);color:var(--wood);font-weight:600;font-size:14px">📷 Show picture</summary><img src="img/cnc-' + n + '.jpg" alt="' + esc(PICS[n]) + '" loading="lazy" style="width:100%;border-radius:6px;margin-top:6px;border:1px solid var(--line)"></details>'; }  // V111: a bigger button, not small grey text
 // V110: cut this kitchen from its own card - start, Cut finished, All sheets cut (the office then picks the next step)
 function cutOp(){ for (var k = 0; k < S.ops.length; k++) if (S.ops[k].kind === "machine" && S.ops[k].links === "job" && S.ops[k].area === "Kitchens") return k; return -1; }
 function cutBlock(j, i){
@@ -601,6 +603,7 @@ function help(){
   return '<header><h1>How to use this page</h1></header>' +
     '<div class="card"><h2>Learn</h2><div class="actions" style="margin-top:0"><button class="btn btn-p" onclick="tour(0)">Show the tour</button>' +
     (DEMO ? '<button class="btn btn-s" onclick="location.search=\'\'">Leave training mode</button>' : '<button class="btn btn-s" onclick="location.search=\'?demo=1\'">Practise in training mode</button>') +
+    '<button class="btn btn-s" onclick="' + (DEMO ? 'cncDemo()' : 'location.search=\'?demo=1&cnc=1\'') + '">See the CNC steps on the sample kitchen</button>' +  // V111
     '</div><div class="note" style="margin-top:8px">Training mode is this same page with made-up maps and a sample kitchen. Press anything: nothing reaches the shop or FreshBooks. Press <b>?</b> on any screen for help with that screen.</div></div>' +
     '<div class="card"><h2>Every day</h2><ol class="steps">' +
     '<li><b>Start of the day:</b> My day → <b>Clock in</b>.</li>' +
@@ -664,7 +667,7 @@ setInterval(function(){ n++; tick(); if (n % 4 === 0) api("wkState", []).then(fu
 // V110: a check-in that just became due shows on any tab (and the phone buzzes); opening the page again asks at once
 function ciNew(s){ var on = !!(s.checkin && s.checkin.due) && !(S && S.checkin && S.checkin.due); if (on && navigator.vibrate) try { navigator.vibrate([300, 150, 300]); } catch (e) {} return on; }
 document.addEventListener("visibilitychange", function(){ if (!document.hidden && !DEMO && TOKEN) api("wkState", []).then(function(s){ if (ciNew(s) || VIEW === "My day") { S = s; render(); } }, function(){}); });
-if (DEMO) { simInit(); call("wkState").then(function(s){ newTasks(s); tourFirst(); }); }  // V94: training mirror
+if (DEMO) { simInit(); call("wkState").then(function(s){ newTasks(s); if (/[?&]cnc=1/.test(location.search)) cncDemo(); else tourFirst(); }); }  // V94: training mirror; V111: ?cnc=1 opens the CNC steps
 else if (TOKEN) call("wkState").then(function(s){ newTasks(s); tourFirst(); }, function(){}); else noLink();  // V95: remember the tasks for pop-ups
 </script>
 </body>
