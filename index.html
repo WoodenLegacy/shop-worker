@@ -588,6 +588,8 @@ function tasksView(){
       '<span><span class="chip ' + pc + '">' + esc(t.priority) + '</span> ' + (t.due ? '<span class="chip ' + (t.overdue ? "c-red" : "c-grey") + '">' + (t.overdue ? "Overdue · " : "Due ") + esc(t.due) + '</span>' : "") + '</span></div>' +
       '<div class="note" style="margin:4px 0 8px">' + (t.job ? esc(t.job) + ' · ' : "") + (t.minutes ? hm(t.minutes) + ' of work ' : "") + st + '</div>' +
       (t.instructions ? '<div style="white-space:pre-wrap;margin-bottom:8px">' + esc(t.instructions) + '</div>' : "") +
+      ((t.files || []).length ? '<div class="actions" style="margin:0 0 8px">' + t.files.map(function(f, k){ return f.kind === "link"  // V114: links and pictures from the office
+        ? '<a class="btn btn-s" target="_blank" rel="noopener" href="' + esc(f.ref) + '">🔗 ' + esc(f.name) + '</a>' : '<button class="btn btn-s" onclick="openTaskPic(' + i + ',' + k + ')">📷 ' + esc(f.name) + '</button>'; }).join("") + '</div>' : "") +
       t.steps.map(function(s, k){ return '<label style="display:flex;gap:10px;align-items:center;padding:6px 0"><input type="checkbox" style="width:22px;height:22px"' + (s.done ? " checked" : "") +
         ' onchange="call(\'wkTaskCheck\',S.tasks[' + i + '].id,' + k + ',this.checked?1:0)"> <span' + (s.done ? ' style="text-decoration:line-through;color:var(--muted)"' : "") + '>' + esc(s.text) + '</span></label>'; }).join("") +
       (TWAIT === t.id ? '<div class="actions"><input id="twWhy" placeholder="What are you waiting for?" style="flex:1;min-width:200px;padding:10px"><button class="btn btn-p" onclick="taskWait(' + i + ')">Send</button><button class="btn btn-s" onclick="TWAIT=\'\';render()">Close</button></div>' :
@@ -595,6 +597,18 @@ function tasksView(){
         '<button class="btn btn-s" onclick="TWAIT=S.tasks[' + i + '].id;render()">Waiting…</button>' +
         '<button class="btn btn-g" onclick="call(\'wkTaskDone\',S.tasks[' + i + '].id).then(function(){ toast(\'Task done\'); })">Done</button></div>') + '</div>';
   }).join("");
+}
+// V114: a picture the office put on a task - opens in a new tab
+function openTaskPic(i, k){
+  var f = S.tasks[i].files[k], w = window.open("", "_blank");
+  $("busy").style.display = "grid";
+  api("wkFile", [f.ref]).then(function(x){
+    $("busy").style.display = "none";
+    var bin = atob(x.data), arr = new Uint8Array(bin.length);
+    for (var n = 0; n < bin.length; n++) arr[n] = bin.charCodeAt(n);
+    var url = URL.createObjectURL(new Blob([arr], { type: x.mime }));
+    if (w) w.location = url; else location.href = url;
+  }, function(e){ $("busy").style.display = "none"; if (w) w.close(); toast(e.message, true); });
 }
 function taskWait(i){ call("wkTaskWait", S.tasks[i].id, $("twWhy").value).then(function(){ TWAIT = ""; render(); toast("The office will see it"); }); }
 function start(i){ var o = S.ops[i]; call("wkStart", o.area, o.op, selItems(o)).then(function(){ toast("Started: " + o.op); }); }
