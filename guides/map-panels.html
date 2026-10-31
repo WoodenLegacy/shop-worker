@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2b2420">
+<title>Map panels: cherry over walnut</title>
+<!-- V136: shop guide for the worker portal (guides/ folder of the shop-worker site). Opened from Help > Shop guides. -->
+<style>
+  :root{--bg:#f6f3ee;--panel:#fff;--ink:#2b2420;--muted:#7a6f66;--line:#e6dfd5;--wood:#8a5a35;--wood-soft:#f1e6da;
+    --green:#2f6b4f;--green-soft:#e3efe8;--amber:#b7791f;--amber-soft:#fbf0dc;--red:#b03a2e;--red-soft:#f8e3e0}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  main{max-width:820px;margin:0 auto;padding:18px 16px 40px}
+  h1{font-size:24px;margin:4px 0 4px} h2{font-size:18px;margin:0 0 10px} h3{font-size:16px;margin:14px 0 6px}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:13px}
+  .big{font-size:20px;font-weight:700}
+  .flow{list-style:none;padding:0;margin:0;counter-reset:s}
+  .flow li{counter-increment:s;position:relative;padding:10px 12px 10px 48px;margin-bottom:8px;background:var(--wood-soft);border-radius:10px}
+  .flow li::before{content:counter(s);position:absolute;left:12px;top:9px;width:26px;height:26px;border-radius:50%;background:var(--wood);color:#fff;font-weight:700;text-align:center;line-height:26px;font-size:14px}
+  .steps{padding-left:22px;margin:0} .steps li{margin-bottom:8px}
+  .warn{border-left:4px solid var(--amber);background:var(--amber-soft)}
+  .stop{border-left:4px solid var(--red);background:var(--red-soft)}
+  .ok{border-left:4px solid var(--green);background:var(--green-soft)}
+  .chip{display:inline-block;padding:1px 9px;border-radius:999px;font-size:13px;font-weight:600;background:var(--wood-soft);color:var(--wood)}
+  .back{display:inline-block;margin-bottom:8px;color:var(--wood);font-weight:600;text-decoration:none}
+  @media print{body{background:#fff} .back{display:none} .card{break-inside:avoid;border-color:#ccc}}
+</style>
+</head>
+<body>
+<main>
+<a class="back" href="javascript:history.length>1?history.back():window.close()">← Back</a>
+<h1>Map panels: cherry over walnut</h1>
+<div class="sub">How to make the two-layer panel the CNC carves into a map. Cherry on top = land, walnut underneath = water. The CNC cuts through the cherry and opens the walnut exactly at the water line.</div>
+
+<div class="card ok">
+  <h2>The one number that matters</h2>
+  <div class="big">Cherry layer = 15.5 mm, even everywhere</div>
+  <div>The CNC opens the walnut at <b>Z = −15.5 mm</b> from the top. If the cherry is thinner or uneven, the shoreline moves.</div>
+</div>
+
+<div class="card">
+  <h2>Cut list</h2>
+  <table>
+    <tr><th>What</th><th>Cherry (top)</th><th>Walnut (bottom)</th></tr>
+    <tr><td>Board you start with</td><td colspan="2">15/16″ thick (about 23.8 mm)</td></tr>
+    <tr><td>Rip width of each strip<br><span class="sub">includes 8 mm for planing</span></td><td><b>23.5 mm</b></td><td><b>28.5 mm</b></td></tr>
+    <tr><td>Board used per strip, with a 3.2 mm saw kerf</td><td>26.7 mm (1.05″)</td><td>31.7 mm (1.25″)</td></tr>
+    <tr><td>Panel thickness after planing</td><td><b>15.5 mm</b></td><td><b>20.5 mm</b></td></tr>
+    <tr><td>Strip length</td><td colspan="2">Final size + ½″ to 1″, to trim the panel square after glue-up</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>The order of work</h2>
+  <ol class="flow">
+    <li>Cross-cut the boards into rough lengths (with the extra length)</li>
+    <li>Rip the strips: 23.5 mm cherry, 28.5 mm walnut</li>
+    <li>Turn each strip 90° onto its edge and glue one panel of cherry, one of walnut</li>
+    <li>Plane each panel: cherry 15.5 mm, walnut 20.5 mm</li>
+    <li>Glue the sandwich: cherry face to walnut face, even pressure</li>
+    <li>Trim the edges to the exact size for the CNC</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2>Step by step</h2>
+
+  <h3>1. Cross-cut into rough lengths</h3>
+  <ul class="steps">
+    <li>Cut the 8-foot boards into pieces as long as the strips you need plus the extra (for example about 20″ for Cape Broyle, about 15.5″ for Twillingate).</li>
+    <li>Short pieces on the table saw are safer and more accurate than ripping a whole 8-foot board.</li>
+  </ul>
+
+  <h3>2. Rip the strips</h3>
+  <ul class="steps">
+    <li>Set the table saw fence to <b>23.5 mm</b> for cherry, <b>28.5 mm</b> for walnut.</li>
+    <li>Always use the push stick.</li>
+  </ul>
+
+  <h3>3. Edge-grain glue-up (cherry and walnut separately)</h3>
+  <ul class="steps">
+    <li>Turn each strip 90° onto its edge: the width you ripped becomes the height of the panel.</li>
+    <li>Glue: PVA with high solids - Titebond II or Titebond III Ultimate.</li>
+    <li>Clamp in bar clamps with cross cauls on top and bottom. Wrap the cauls in masking or packing tape so the glue does not stick to them. The cauls keep neighbouring strips level.</li>
+  </ul>
+
+  <h3>4. Plane to thickness</h3>
+  <ul class="steps">
+    <li>Scrape off the dried glue first (scraper or card scraper). Dried glue dulls the planer knives.</li>
+    <li>Plane the cherry panels to <b>15.0 – 15.5 mm</b>, the walnut panels to <b>20.0 – 20.5 mm</b>.</li>
+  </ul>
+
+  <h3>5. Glue the sandwich</h3>
+  <ul class="steps">
+    <li>Roll an even coat of glue over the whole face.</li>
+    <li>Press the two panels between two thick flat boards (laminated MDF or plywood, with waxed paper between) or with clamps spread evenly over the whole panel.</li>
+  </ul>
+
+  <h3>6. Trim to the CNC size</h3>
+  <ul class="steps">
+    <li>When the glue is dry, trim the edges square (90°) to the exact blank size for the machine.</li>
+  </ul>
+</div>
+
+<div class="card warn">
+  <h2>Checks before you start the CNC program</h2>
+  <ul class="steps">
+    <li><b>Cherry thickness 15.5 mm:</b> measure with the caliper at 4–6 points around the edge and in the middle. If it is not even, the bit takes too much in the shallow water and the shoreline moves.</li>
+    <li><b>Z zero:</b> set Z-zero on the top face of the blank. The bit must open the walnut exactly at <b>Z = −15.5 mm</b> from the top - check the depth against the model.</li>
+    <li><b>Clamping:</b> use the ½″ margin on each side for the clamps. In the CAM preview check that the rapid moves and the clearance height pass above the bolts and clamps.</li>
+  </ul>
+</div>
+
+<div class="card stop">
+  <b>Something does not fit</b> (thickness off, a gap in the glue line, a crack)? Do not cut it - tell the office first (call, or a task → <b>Waiting…</b> with the reason).
+</div>
+</main>
+</body>
+</html>
